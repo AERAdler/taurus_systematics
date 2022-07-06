@@ -23,11 +23,11 @@ from ground_tools import template_from_position
 def run_sim(simname, sky_alm,
             basedir = opj("/","mn", "stornext", "u3", "aeadler", "ssn"),
             beamdir = "beams", outdir = opj("output", "maps"),
-            mlen= 24*60*60,  sample_rate = 50.01, t0 = 1546300800, 
+            mlen= 24*60*60,  sample_rate = 119.1, t0 = 1546300800, 
             npairs=None, create_fpu=False, fov=2.0, beam_files=None,
             no_pairs=False, btype="Gaussian", fwhm=43., deconv_q=True, 
             lmax=1000, mmax=4, pol_only=False, no_pol=False, add_ghosts=False, 
-            ghost_amp=0.01, scan_type="atacama", el0=50., az0=0., freq=1.0e11, 
+            ghost_amp=0.01, scan_type="atacama", el0=35., az0=0., freq=1.5e11, 
             ground_alm = None, filter_highpass=False, w_c=None, filter_m=1,
             hwp_mode=None, hwp_model=None, load_mueller=False, varphi=0.0, 
             hfreq=1.0, hstepf=1/(3*60*60), filter_4fhwp=False, nside_spin=1024, 
@@ -88,10 +88,8 @@ def run_sim(simname, sky_alm,
         Add ghost reflections to the main beam (default : False)  
     ghost_amp : float
         Amplitude of the ghosts (default : 0.01)
-    scan_type : string
-        Type of simulation (atacama/balloon)
     el0 : float
-        Boresight starting elevation in degrees (default: 50.)
+        Boresight starting elevation in degrees (default: 35.)
     az0 : float
         Boresight starting azimuth in degrees (default: 0.)
     freq : float
@@ -137,21 +135,32 @@ def run_sim(simname, sky_alm,
     """
     np.random.seed(seed)
 
-    if scan_type == "atacama":
+    ndays = int(mlen/(24*60*60))
+    track = np.loadtxt(opj(basedir, balloon_track))
+    co_added_map = np.zeros((3,hp.nside2npix(512)))
+    days_visited = np.zeros(hp.nside2npix(512))
+    for day in range(ndays):
+        ctime0 = t0+day*24*60*60
+        track_idx = np.argmin(np.absolute(track[:,0]-ctime0))
+        lat = track[track_idx,1]
+        lon = track[track_idx,2]
+        if rank==0:
+            print(track[track_idx,0],lat, lon)
+        h = 35000+200*np.random.normal()
+        ymd = datetime.date.fromtimestamp(ctime0).strftime("%Y%m%d")
 
-        scan= ScanStrategy(mlen, external_pointing=True, sample_rate=sample_rate, 
-                                 location="atacama", ctime0=t0)
-        scan_opts = dict(scan_speed=1., 
-                        ctime_func=scan.schedule_ctime,
-                        q_bore_func=scan.schedule_scan, 
-                        ctime_kwargs=dict(),
-                        q_bore_kwargs=dict(),
-                        max_spin=2,
-                        nside_spin=256,
-                        preview_pointing=False,
-                        interp = True,
-                        save_tod=True,
-                        filter_highpass = filter_highpass)
+        scan = ScanStrategy(24*60*60, sample_rate=sample_rate, 
+                            lat=lat, lon=lon, ctime0=ctime0)
+        scan_opts = dict(scan_speed=30.*int(2*(day%2-.5)), #reverse scan direction every day
+                         use_taurus_scan=True,
+                         q_bore_func=scan.taurus_scan, 
+                         ctime_kwargs=dict(),
+                         q_bore_kwargs=dict(el0=el0, az0=az0),
+                         max_spin=2,
+                         nside_spin=256,
+                         preview_pointing=False,
+                         interp = True, 
+                         filter_highpass = filter_highpass)
 
         if create_fpu:#A square focal plane
             beam_opts = dict(lmax=lmax, fwhm=fwhm, btype=btype, 
@@ -168,110 +177,48 @@ def run_sim(simname, sky_alm,
                             print_list=True, sensitive_freq=freq, 
                             file_names=beam_files)
 
-                 
-        scan.partition_schedule_file(filename=opj(basedir, "ancillary","scc_scan_file.txt"), 
-                                     chunksize=None)#1hr sweep
+        scan.partition_mission(chunksize=int(sample_rate*3600))
         scan.allocate_maps(nside=512)
         scan.set_hwp_mod(mode="continuous", freq=1.)
         if filter_highpass and (w_c is not None):
             scan.set_filter_dict(w_c, m=filter_m)
 
-        if ground_alm is not None:
-            scan_opts["q_bore_kwargs"] = {"ground":True}
+        if ground:
+            if rank==0:
+                world_map = hp.read_map(opj(basedir,"ground_input",
+                            "SSMIS","SSMIS-{}-91H.fits".format(ymd)))
+                ground_template = template_from_position(world_map, 
+                    lat, lon, h, nside_out=4096, cmb=False, freq=95.,
+                                                     frac_bwidth=.2)
+                ground_alm = hp.map2alm([ground_template, 
+                                    np.zeros_like(ground_template), 
+                                    np.zeros_like(ground_template)], 
+                                    lmax = lmax)
+                ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
+            else:
+                ground_alm = np.zeros((3,hp.Alm.getsize(lmax=lmax)), dtype=complex)
+            comm.Bcast(ground_alm, root=0)
+
             scan.scan_instrument_mpi(sky_alm, ground_alm=ground_alm, **scan_opts)
+        
         else:
             scan.scan_instrument_mpi(sky_alm, **scan_opts)
+
         maps, cond, proj = scan.solve_for_map(return_proj=True)
         if scan.mpi_rank == 0:
-            hp.write_map(opj(basedir, outdir, "maps_"+simname+".fits"), maps)
-            hp.write_map(opj(basedir, outdir, "cond_"+simname+".fits"), cond)
-            hp.write_map(opj(basedir, outdir, "hits_"+simname+".fits"), proj[0])
+            hp.write_map(opj(basedir, outdir,
+                 "maps_"+simname+"_{}.fits".format(ymd)), maps)
+            hp.write_map(opj(basedir, outdir, 
+                "cond_"+simname+"_{}.fits".format(ymd)), cond)
+            hp.write_map(opj(basedir, outdir, 
+                "hits_"+simname+"_{}.fits".format(ymd)), proj[0])
+            co_added_map[:, maps[0]!=hp.UNSEEN] += maps[:, maps[0]!=hp.UNSEEN]
+            days_visited[maps[0]!=hp.UNSEEN] += 1
+    if scan.mpi_rank==0:
 
-    elif scan_type== "balloon":
-        ndays = int(mlen/(24*60*60))
-        track = np.loadtxt(opj(basedir, balloon_track))
-        co_added_map = np.zeros((3,hp.nside2npix(512)))
-        days_visited = np.zeros(hp.nside2npix(512))
-        for day in range(ndays):
-            ctime0 = t0+day*24*60*60
-            track_idx = np.argmin(np.absolute(track[:,0]-ctime0))
-            lat = track[track_idx,1]
-            lon = track[track_idx,2]
-            if rank==0:
-                print(track[track_idx,0],lat, lon)
-            h = 35000+200*np.random.normal()
-            ymd = datetime.date.fromtimestamp(ctime0).strftime("%Y%m%d")
-
-            scan = ScanStrategy(24*60*60, sample_rate=sample_rate, 
-                                lat=lat, lon=lon, ctime0=ctime0)
-            scan_opts = dict(scan_speed=30.*int(2*(day%2-.5)), #reverse scan direction every day
-                             use_taurus_scan=True,
-                             q_bore_func=scan.taurus_scan, 
-                             ctime_kwargs=dict(),
-                             q_bore_kwargs=dict(el0=el0, az0=az0),
-                             max_spin=2,
-                             nside_spin=256,
-                             preview_pointing=False,
-                             interp = True, 
-                             filter_highpass = filter_highpass)
-
-            if create_fpu:#A square focal plane
-                beam_opts = dict(lmax=lmax, fwhm=fwhm, btype=btype, 
-                                 sensitive_freq=freq, deconv_q=deconv_q)
-                nfloor = int(np.floor(np.sqrt(npairs)))
-                if btype=="PO":
-                    beam_opts["po_file"] = beam_files#It's just the one file, actually
-                scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov, 
-                        **beam_opts)
-
-            else:
-                scan.load_focal_plane(
-                                beamdir, btype=btype, no_pairs=no_pairs, 
-                                print_list=True, sensitive_freq=freq, 
-                                file_names=beam_files)
-
-            scan.partition_mission(chunksize=int(sample_rate*3600))
-            scan.allocate_maps(nside=512)
-            scan.set_hwp_mod(mode="continuous", freq=1.)
-            if filter_highpass and (w_c is not None):
-                scan.set_filter_dict(w_c, m=filter_m)
-
-            if ground_alm is not None:
-                if rank==0:
-                    world_map = hp.read_map(opj(basedir,"ground_input",
-                                "SSMIS","SSMIS-{}-91H.fits".format(ymd)))
-                    ground_template = template_from_position(world_map, 
-                        lat, lon, h, nside_out=4096, cmb=False, freq=95.,
-                                                         frac_bwidth=.2)
-                    ground_alm = hp.map2alm([ground_template, 
-                                        np.zeros_like(ground_template), 
-                                        np.zeros_like(ground_template)], 
-                                        lmax = lmax)
-                    ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
-                else:
-                    ground_alm = np.zeros((3,hp.Alm.getsize(lmax=lmax)), dtype=complex)
-                comm.Bcast(ground_alm, root=0)
-
-                scan.scan_instrument_mpi(sky_alm, ground_alm=ground_alm, **scan_opts)
-            
-            else:
-                scan.scan_instrument_mpi(sky_alm, **scan_opts)
-
-            maps, cond, proj = scan.solve_for_map(return_proj=True)
-            if scan.mpi_rank == 0:
-                hp.write_map(opj(basedir, outdir,
-                     "maps_"+simname+"_{}.fits".format(ymd)), maps)
-                hp.write_map(opj(basedir, outdir, 
-                    "cond_"+simname+"_{}.fits".format(ymd)), cond)
-                hp.write_map(opj(basedir, outdir, 
-                    "hits_"+simname+"_{}.fits".format(ymd)), proj[0])
-                co_added_map[:, maps[0]!=hp.UNSEEN] += maps[:, maps[0]!=hp.UNSEEN]
-                days_visited[maps[0]!=hp.UNSEEN] += 1
-        if scan.mpi_rank==0:
-
-            co_added_map[:,days_visited!=0] /= days_visited[days_visited!=0]
-            hp.write_map(opj(basedir, outdir, "maps_"+simname+"_coadd.fits"),
-                     co_added_map)
+        co_added_map[:,days_visited!=0] /= days_visited[days_visited!=0]
+        hp.write_map(opj(basedir, outdir, "maps_"+simname+"_coadd.fits"),
+                 co_added_map)
     return
 
 
@@ -463,7 +410,7 @@ def main():
     parser.add_argument("--fwhm", action="store", dest="fwhm",
         default=30.0, type=float, help="Beam FWHM in arcmin")
     parser.add_argument("--freq", action="store", dest="freq",
-        default=100, type=float, help="Beam frequency")
+        default=150, type=float, help="Beam frequency")
     parser.add_argument("--add_ghosts", action="store_true", dest="add_ghosts",
         default=False)
     parser.add_argument("--ghost_amp", action="store_true", dest="ghost_amp",
@@ -529,14 +476,12 @@ def main():
         default=False)
 
     # Map arguments
-    parser.add_argument("--scan_type", action="store", dest="scan_type", type=str,
-        default="satellite")
     parser.add_argument("--alm_type", action="store", dest="alm_type", type=str,
         default="synfast")
     parser.add_argument("--sky_map", type=str, default="",
         help="Input sky map", dest="sky_map")
-    parser.add_argument("--ground_map", type=str, default=None,
-        help="Input ground map", dest="ground_map")
+    parser.add_argument("--ground", type=bool, action="store_true",
+        default=False, help="include pickup", dest="ground")
     parser.add_argument("--balloon_track", type=str, default=None,
         help="Balloon path file", dest="balloon_track")
     #TOD filters
@@ -589,19 +534,6 @@ def main():
             sky_alm = hp.map2alm(hp.read_map(map_path, field=None), 
                 lmax=args.lmax)
         ground_alm = None
-        if args.ground_map is not None:
-            if args.scan_type=="balloon":
-                ground_alm = "loon"
-            else:
-                #Create the alm on rank 0, in order not to read a giant map
-                if rank==0:
-                    gata = hp.read_map(opj(basedir,args.ground_map))
-                    ground_alm = hp.map2alm([gata, np.zeros_like(gata), 
-                                        np.zeros_like(gata)], lmax=args.lmax)
-                    ground_alm = hp.smoothalm(ground_alm, fwhm=np.radians(1.))
-                else:
-                    ground_alm = np.zeros((3,hp.Alm.getsize(lmax=args.lmax)), dtype=complex)
-                comm.Bcast(ground_alm, root=0)
 
         run_opts = dict(
                         basedir = basedir,
@@ -626,7 +558,7 @@ def main():
                         lmax=args.lmax,
                         mmax=args.mmax,
                         deconv_q = args.deconv_q,
-                        ground_alm = ground_alm, 
+                        ground = args.ground, 
                         filter_highpass = args.filter_highpass,  
                         w_c = args.w_c,
                         filter_m = args.filter_m,                     
@@ -637,7 +569,6 @@ def main():
                         nside_spin=args.nside_spin,
                         nside_out=args.nside_out,
                         sample_rate=args.sample_rate,
-                        scan_type=args.scan_type,
                         freq=args.freq,
                         hwp_mode=args.hwp_mode,
                         hwp_model=args.hwp_model,
