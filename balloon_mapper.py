@@ -27,7 +27,7 @@ def run_sim(simname, sky_alm,
             npairs=None, create_fpu=False, fov=2.0, beam_files=None,
             no_pairs=False, btype="Gaussian", fwhm=43., deconv_q=True, 
             lmax=1000, mmax=4, pol_only=False, no_pol=False, add_ghosts=False, 
-            ghost_amp=0.01, scan_type="atacama", el0=35., az0=0., freq=1.5e11, 
+            ghost_amp=0.01, scan_type="atacama", el0=35., az0=0., freq=150., 
             ground_alm = None, filter_highpass=False, w_c=None, filter_m=1,
             hwp_mode=None, hwp_model="HWP_only", load_mueller=False, varphi=0.0, 
             hfreq=1.0, hstepf=1/(3*60*60), filter_4fhwp=False, nside_spin=1024, 
@@ -493,7 +493,7 @@ def main():
         default="synfast")
     parser.add_argument("--sky_map", type=str, default="",
         help="Input sky map", dest="sky_map")
-    parser.add_argument("--ground", type=bool, action="store_true",
+    parser.add_argument("--ground", action="store_true",
         default=False, help="include pickup", dest="ground")
     parser.add_argument("--balloon_track", type=str, default=None,
         help="Balloon path file", dest="balloon_track")
