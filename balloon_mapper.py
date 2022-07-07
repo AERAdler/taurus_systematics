@@ -28,7 +28,7 @@ def run_sim(simname, sky_alm,
             no_pairs=False, btype="Gaussian", fwhm=43., deconv_q=True, 
             lmax=1000, mmax=4, pol_only=False, no_pol=False, add_ghosts=False, 
             ghost_amp=0.01, scan_type="atacama", el0=35., az0=0., freq=150., 
-            ground_alm = None, filter_highpass=False, w_c=None, filter_m=1,
+            ground = None, filter_highpass=False, w_c=None, filter_m=1,
             hwp_mode=None, hwp_model="HWP_only", load_mueller=False, varphi=0.0, 
             hfreq=1.0, hstepf=1/(3*60*60), filter_4fhwp=False, nside_spin=1024, 
             nside_out=512, verbose=1, balloon_track = None, killfrac=0., 
@@ -155,8 +155,8 @@ def run_sim(simname, sky_alm,
                             lat=lat, lon=lon, ctime0=ctime0)
         #reverse scan direction every day
         scan_opts = dict(scan_speed=30.*int(2*(day%2-.5)), 
-                         use_taurus_scan=True,
-                         q_bore_func=scan.taurus_scan, 
+                         use_strictly_az=True,
+                         q_bore_func=scan.strictly_az, 
                          ctime_kwargs=dict(),
                          q_bore_kwargs=dict(el0=el0, az0=az0),
                          max_spin=2,
@@ -164,10 +164,7 @@ def run_sim(simname, sky_alm,
                          preview_pointing=False,
                          interp = True, 
                          filter_highpass = filter_highpass)
-        hwp = Beam().hwp()
-        if hwp_model is not "HWP_only":
             
-            hwp.choose_HWP_model(hwp_model)
 
         if create_fpu:#A square focal plane
             beam_opts = dict(lmax=lmax, fwhm=fwhm, btype=btype, 
@@ -175,14 +172,18 @@ def run_sim(simname, sky_alm,
             nfloor = int(np.floor(np.sqrt(npairs)))
             if btype=="PO":
                 beam_opts["po_file"] = beam_files#It's just the one file, actually
-            scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov, hwp=hwp,
+            scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov,
                     **beam_opts)
 
         else:
             scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
-                                  sensitive_freq=freq, hwp=hwp, 
-                                  file_names=beam_files)
+                                  sensitive_freq=freq, file_names=beam_files)
 
+
+        if hwp_model != "HWP_only":
+            for beami in scan.beams:
+                beami[0].set_hwp_mueller(model_name=hwp_model)
+                beami[1].set_hwp_mueller(model_name=hwp_model) 
         scan.partition_mission(chunksize=int(sample_rate*3600))
         scan.allocate_maps(nside=512)
         scan.set_hwp_mod(mode=hwp_mode, freq=1.)
