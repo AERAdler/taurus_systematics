@@ -29,7 +29,7 @@ def run_sim(simname, sky_alm,
             lmax=1000, mmax=4, pol_only=False, no_pol=False, add_ghosts=False, 
             ghost_amp=0.01, scan_type="atacama", el0=35., az0=0., freq=1.5e11, 
             ground_alm = None, filter_highpass=False, w_c=None, filter_m=1,
-            hwp_mode=None, hwp_model=None, load_mueller=False, varphi=0.0, 
+            hwp_mode=None, hwp_model="HWP_only", load_mueller=False, varphi=0.0, 
             hfreq=1.0, hstepf=1/(3*60*60), filter_4fhwp=False, nside_spin=1024, 
             nside_out=512, verbose=1, balloon_track = None, killfrac=0., 
             seed=25, preview_pointing=False, comm=None, **kwargs):
@@ -106,7 +106,7 @@ def run_sim(simname, sky_alm,
     hwp_mode : string
         Type of HWP motion (None, stepped, continuous)
     hwp_model : string
-        Pre-included HWP model selected ()
+        Pre-included HWP model selected (default: HWP_only)
     varphi : float
         HWP angle correction to apply due to multi-layer phase offset 
         (default: 0.0)
@@ -137,8 +137,10 @@ def run_sim(simname, sky_alm,
 
     ndays = int(mlen/(24*60*60))
     track = np.loadtxt(opj(basedir, balloon_track))
-    co_added_map = np.zeros((3,hp.nside2npix(512)))
-    days_visited = np.zeros(hp.nside2npix(512))
+    co_added_maps = np.zeros((3,hp.nside2npix(nside_out)))
+    co_added_cond = np.zeros(hp.nside2npix(nside_out))
+    co_added_hits = np.zeros((hp.nside2npix(nside_out)))
+    days_visited = np.zeros(hp.nside2npix(nside_out))
     for day in range(ndays):
         ctime0 = t0+day*24*60*60
         track_idx = np.argmin(np.absolute(track[:,0]-ctime0))
@@ -151,7 +153,8 @@ def run_sim(simname, sky_alm,
 
         scan = ScanStrategy(24*60*60, sample_rate=sample_rate, 
                             lat=lat, lon=lon, ctime0=ctime0)
-        scan_opts = dict(scan_speed=30.*int(2*(day%2-.5)), #reverse scan direction every day
+        #reverse scan direction every day
+        scan_opts = dict(scan_speed=30.*int(2*(day%2-.5)), 
                          use_taurus_scan=True,
                          q_bore_func=scan.taurus_scan, 
                          ctime_kwargs=dict(),
@@ -161,6 +164,10 @@ def run_sim(simname, sky_alm,
                          preview_pointing=False,
                          interp = True, 
                          filter_highpass = filter_highpass)
+        hwp = Beam().hwp()
+        if hwp_model is not "HWP_only":
+            
+            hwp.choose_HWP_model(hwp_model)
 
         if create_fpu:#A square focal plane
             beam_opts = dict(lmax=lmax, fwhm=fwhm, btype=btype, 
@@ -168,18 +175,17 @@ def run_sim(simname, sky_alm,
             nfloor = int(np.floor(np.sqrt(npairs)))
             if btype=="PO":
                 beam_opts["po_file"] = beam_files#It's just the one file, actually
-            scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov, 
+            scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov, hwp=hwp,
                     **beam_opts)
 
         else:
-            scan.load_focal_plane(
-                            beamdir, btype=btype, no_pairs=no_pairs, 
-                            print_list=True, sensitive_freq=freq, 
-                            file_names=beam_files)
+            scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
+                                  sensitive_freq=freq, hwp=hwp, 
+                                  file_names=beam_files)
 
         scan.partition_mission(chunksize=int(sample_rate*3600))
         scan.allocate_maps(nside=512)
-        scan.set_hwp_mod(mode="continuous", freq=1.)
+        scan.set_hwp_mod(mode=hwp_mode, freq=1.)
         if filter_highpass and (w_c is not None):
             scan.set_filter_dict(w_c, m=filter_m)
 
@@ -212,13 +218,20 @@ def run_sim(simname, sky_alm,
                 "cond_"+simname+"_{}.fits".format(ymd)), cond)
             hp.write_map(opj(basedir, outdir, 
                 "hits_"+simname+"_{}.fits".format(ymd)), proj[0])
-            co_added_map[:, maps[0]!=hp.UNSEEN] += maps[:, maps[0]!=hp.UNSEEN]
+            co_added_maps[:, maps[0]!=hp.UNSEEN] += maps[:, maps[0]!=hp.UNSEEN]
+            co_added_hits += proj[0]
+            co_added_cond[maps[0]!=hp.UNSEEN] = np.minimum(
+                cond[maps[0]!=hp.UNSEEN], co_added_cond[maps[0]!=hp.UNSEEN])
             days_visited[maps[0]!=hp.UNSEEN] += 1
     if scan.mpi_rank==0:
 
-        co_added_map[:,days_visited!=0] /= days_visited[days_visited!=0]
+        co_added_maps[:,days_visited!=0] /= days_visited[days_visited!=0]
         hp.write_map(opj(basedir, outdir, "maps_"+simname+"_coadd.fits"),
-                 co_added_map)
+                 co_added_maps)
+        hp.write_map(opj(basedir, outdir, "hits_"+simname+"_coadd.fits"),
+                 co_added_hits)
+        hp.write_map(opj(basedir, outdir, "cond_"+simname+"_coadd.fits"),
+                 co_added_cond)
     return
 
 
@@ -398,7 +411,7 @@ def main():
     parser.add_argument("--beam_lmax", action="store", dest="beam_lmax",
         default=2000, type=int, help="Maximum lmax for beam decomposition")
     parser.add_argument("--beam_type", type=str, dest="btype", default="Gaussian",
-        help="Input beam type: [PO, Gaussian]")
+        help="Input beam type: [Gaussian, PO]")
     parser.add_argument("--grasp", action="store_true", dest="grasp", 
         default=False, help="The beams come as pickles of grasp grids and cuts")
     parser.add_argument("--stitch_wide", action="store_true", dest="stitch_wide",
