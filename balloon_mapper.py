@@ -171,7 +171,7 @@ def run_sim(simname, sky_alm,
                              sensitive_freq=freq, deconv_q=deconv_q)
             nfloor = int(np.floor(np.sqrt(npairs)))
             if btype=="PO":
-                beam_opts["po_file"] = beam_files#It's just the one file, actually
+                beam_opts["po_file"] = beam_files#It"s just the one file, actually
             scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov,
                     **beam_opts)
 
@@ -391,6 +391,227 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
 
     sat.barrier()
 
+def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
+             calibrate=False, mask=None, nside_out=512, lmax=700, 
+             l1=100, l2=300):
+    """
+    Function to analyze simulation output 
+    Arguments
+    ---------
+    analysis_dir : string
+        Path to the directory in which input maps are located, and where 
+        the output spectra and maps directories are.
+    sim_tag : string
+        Tag of the simulated map that is getting analyzed.
+
+    Keyword arguments
+    -----------------
+    ideal_map : string
+        Name of an ideal simulation map the sim_tag map gets 
+        differentiated against. (default: None)
+    input_map : string
+        Name of an input map the sim_tag map gets 
+        differentiated against. (default: None)
+    calibrate : bool
+        Whether to recalibrate the scanned map vs ideal and/or input.
+        If True, a gain is computed as the average ratio in the TT spectrum 
+        between the ideal/input map and the sim_tag map. 
+        The sim_tag map is then scaled by sqrt(gain). (default: False)
+    mask : string
+        Mask file to apply to the maps (default: None)
+    nside_out : int
+        Healpix NSIDE of the output map. (default: 512)
+    lmax : int
+        Maximum l when making power spectra. (default: 700)
+    l1 : int
+        Lower edge of the calibration window. (default: 100)
+    l2 : int
+        Higher edge of the calibration window. (default: 300)
+    """
+
+    filename = "maps_"+sim_tag+".fits"
+    maps = tools.read_map(opj(analyzis_dir, filename), field=None, fill=np.nan)
+    hits = tools.read_map(opj(analyzis_dir, filename.replace("maps_", "hits_")))
+    cond = tools.read_map(opj(analyzis_dir, filename.replace("maps_", "cond_")))
+    maps = hp.ud_grade(maps, nside)
+    hits = hp.ud_grade(hits, nside)
+    cond = hp.ud_grade(cond, nside)
+
+    if mask:
+        custom_mask = hp.ud_grade(tools.read_map(opj(analysis_dir, mask)), nside)
+    else:
+        custom_mask = np.ones_like(hits)
+
+    hits_mask = hits * custom_mask
+    fsky = np.sum(hits_mask > 0.) / float(len(hits_mask))
+
+    spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
+    hits[hits == 0] = np.nan
+    hits[custom_mask==0] = np.nan
+
+    cl = tools.spice(maps, mask=mask, **spice_opts2use)
+    cl = cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)**2)
+    np.save(opj(analyzis_dir, "spectra", "{}_spectra.npy".format(sim_tag)), cl)
+
+    
+    #Versus ideal
+    if ideal_map:
+
+        ideal_maps = tools.read_map(opj(outdir, ideal_map),
+            field=None, fill=np.nan)
+        ideal_maps = hp.ud_grade(ideal_maps, nside)
+        
+        masked_ideal = ideal_maps.copy()
+        #mask the ideal map on unscanned pixels and masked areas
+        if mask:
+            mask = ~np.isnan(hits)
+            for mi in masked_ideal:
+                mi[~mask] = np.nan
+        #Calibration
+        if calibrate:
+            cl_ideal = tools.spice(masked_ideal, mask=mask, **spice_opts2use)
+            cl_ideal = cl_ideal/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
+                                                 lmax=len(cl_ideal[1])-1)**2)
+            #Compute Cls for the smoothed map, deconvolve
+            gain_dec = np.average(cl_ideal[0, l1:l2]/cl[0, l1:l2])
+            print("Gain for map {} is: {:.3f}".format(sim_tag, gain_dec))
+        else:
+            gain_dec = 1.
+        #Should difference maps be gain_corrected?
+        diff_ideal = maps*np.sqrt(gain_dec) - ideal_maps
+
+        for diffi in diff_ideal:
+            diffi[~mask] = np.nan
+        diff_ideal_cl = tools.spice(diff_ideal, mask=mask, **spice_opts2use)
+        diff_ideal_cl = diff_ideal_cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
+                                         lmax=len(diff_ideal_cl[1])-1)**2)
+        np.save(opj(analyzis_dir, "spectra", 
+                    "{}_diff_ideal_spectra.npy".format(sim_tag)), diff_ideal_cl)
+
+    #Versus input
+    if input_map:
+
+        input_maps = tools.read_map(opj(outdir, input_map),
+            field=None, fill=np.nan)
+        input_maps = hp.ud_grade(input_maps, nside)
+        
+        masked_input = input_maps.copy()
+        #mask the input map on unscanned pixels and masked areas
+        if mask:
+            mask = ~np.isnan(hits)
+            for mi in masked_input:
+                mi[~mask] = np.nan
+        #Calibration
+        if calibrate:
+            cl_input= tools.spice(masked_input, mask=mask, **spice_opts2use)
+            cl_input = cl_input/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
+                                                 lmax=len(cl_input[1])-1)**2)
+            #Compute Cls for the smoothed map, deconvolve
+            gain_dec = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
+            print("Gain for map {} is: {:.3f}".format(sim_tag, gain_dec))
+        else:
+            gain_dec = 1.
+        #Should difference maps be gain_corrected?
+        diff_input = maps*np.sqrt(gain_dec) - input_maps
+
+        for diffi in diff_input:
+            diffi[~mask] = np.nan
+        diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
+        diff_input_cl = diff_input_cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
+                                         lmax=len(diff_input_cl[1])-1)**2)
+        np.save(opj(analyzis_dir, "spectra", 
+                    "{}_diff_input_spectra.npy".format(sim_tag)), diff_input_cl)
+
+
+    img_dir = opj(analyzis_dir, "images")
+    cmap4maps = matplotlib.cm.RdBu_r
+    cmap4maps.set_under("w")
+    cmap4maps.set_bad("black", 0.5)
+    fstrs = ["TT", "EE", "BB", "TE", "TB", "EB"]
+    cmap = plt.get_cmap("tab10")
+
+    #HERE BE PLOTTING
+    
+    """
+    for f in range(6):
+        plt.figure(f)
+        ell = np.arange(len(cl[f]))
+        plt.plot(ell[5:], gain_dec * ell[5:] * (ell[5:] + 1) * cl[f][5:] / 2. / np.pi,
+            label=label,
+            color=cmap(i))
+        
+        #plotting input spectra
+        plt.plot(ell[5:], gain_dec * ell[5:] * (ell[5:] + 1) * cl_input[f][5:] / 2. / np.pi,
+            label="input_map", lss="--",
+            color=cmap(i))
+    
+
+    # plot_tools.plot_iqu(maps, opj(outdir, img_dir), mname,
+    #     plot_func=hp.mollview, cmap=cmap4maps, tight=True, title=",
+    #     sym_limits=[300, 5, 5])
+
+    # Plotting difference maps
+    for f in range(6):
+        plt.figure(f+6)
+        ell = np.arange(len(diff_cl[f]))
+        plt.plot(ell[5:], ell[5:] * (ell[5:] + 1) * diff_cl[f][5:] / 2. / np.pi,
+            label=label if j==0 else None, ls=lss[i],
+            color=cmap(i))
+
+        #plotting the input difference spectra
+        plt.plot(ell[5:], ell[5:] * (ell[5:] + 1) * diff_cl_input[f][5:] / 2. / np.pi,
+            label="input_map", ls="--",
+            color=cmap(i))
+
+    if i == (len(tags) - 1) and run_spice:
+
+        for f in range(6):
+
+            plt.figure(f)
+            if f == 2:
+                plot_bb(outdir)
+                plt.gca().set_yscale("log")
+                plt.gca().set_xscale("log")
+                plt.xlim([1,xlmax])
+                plt.ylim([1e-6, 1e-1])
+
+            plt.legend(loc=2)
+            plt.xlabel("Multipole, $\ell$")
+            plt.ylabel("$\ell(\ell + 1)C _\ell^{" + fstrs[f] + "}/2\pi$")
+            plt.xlim([0, xlmax])
+
+            if f != 2:
+                autoscale_y(plt.gca())
+                plt.xlim([1,xlmax])
+            specname = "spec_{}".format(fstrs[f])
+            plt.savefig(opj(outdir, img_dir, specname),
+                bbox_inches="tight", dpi=300)
+
+            plt.close()
+
+            plt.figure(f+6)
+            if f == 2:
+                plot_bb(outdir)
+                plt.gca().set_yscale("log")
+                plt.gca().set_xscale("log")
+                plt.ylim([1e-7, 1e-1])
+                plt.xlim([1,xlmax])
+
+            plt.legend(loc=2)
+            plt.xlabel("Multipole, $\ell$")
+            plt.ylabel("$\ell(\ell + 1)C _\ell^{" + fstrs[f] + "}/2\pi$")
+            plt.xlim([1, xlmax])
+
+            if f != 2:
+                autoscale_y(plt.gca())
+
+            specname = "dspec_{}".format(fstrs[f])
+            plt.savefig(opj(outdir, img_dir, specname),
+                bbox_inches="tight", dpi=300)
+
+            plt.close()
+
+    """
 
 def main():
 
@@ -413,8 +634,6 @@ def main():
         default=2000, type=int, help="Maximum lmax for beam decomposition")
     parser.add_argument("--beam_type", type=str, dest="btype", default="Gaussian",
         help="Input beam type: [Gaussian, PO]")
-    parser.add_argument("--grasp", action="store_true", dest="grasp", 
-        default=False, help="The beams come as pickles of grasp grids and cuts")
     parser.add_argument("--stitch_wide", action="store_true", dest="stitch_wide",
         default=False, help="stitch wide GRASP cuts to main beam files")
     parser.add_argument("--plot_beam", action="store_true", dest="plot_beam",
@@ -435,13 +654,19 @@ def main():
         default=4, type=int)
     parser.add_argument("--deconv_q", action="store_false", dest="deconv_q")
 
+    #Operations
+    parser.add_argument("--grasp", action="store_true", dest="grasp", 
+        default=False, help="The beams come as pickles of grasp grids and cuts")
+    parser.add_argument("--run", action="store_true", dest="run",
+        default=False, help="Create maps")
+    parser.add_argument("--analyze", action="store_true", dest="analyze",
+        default=False, help="Make difference maps and spectra")
+
     #Beamconv
     parser.add_argument("--sim_tag", action="store", dest="sim_tag", type=str,
         default="test", help="Identifier for simulation name")
     parser.add_argument("--quiet", action="store_const", dest="verbose",
         const=0, default=1, help="less print statements")
-    parser.add_argument("--operation", action="store", dest="operation",
-        default="run", type=str, help="run, analysis")
     parser.add_argument("--seed", action="store", dest="seed", type=float,
         default=25)
     parser.add_argument("--el0", action="store", dest="el0", type=float,
@@ -512,7 +737,7 @@ def main():
 
     if args.system=="OwlAEA":
         #Alex on Owl
-        basedir = opj("/","mn","stornext", "u3","aeadler","ssn")
+        basedir = opj("/","mn","stornext", "u3","aeadler","taurus_systematics")
     else:
         basedir = "./"
 
@@ -537,7 +762,7 @@ def main():
         parse_beams(beam_files, beamdir, ss_obj=None, lmax=args.beam_lmax, 
                     stitch_wide=args.stitch_wide, plot=args.plot_beam)
 
-    if args.operation=="run":
+    if args.run:
         if args.alm_type=="synfast":
             cls = np.loadtxt(opj(basedir,"wmap7_r0p03_lensed_uK_ext.txt"), unpack=True)
             ell, cls = cls[0], cls[1:]
@@ -588,16 +813,25 @@ def main():
                         hwp_model=args.hwp_model,
                         varphi=args.varphi,
                         filter_4fhwp=args.filter_4fhwp,
-#                        pol_only=args.pol_only,
-#                        no_pol=args.no_pol,
-#                        glob_tag=args.glob_tag,
-
                         hfreq=args.hfreq,
                         hstepf=args.hstepf,
                         comm=comm)
         
 
         run_sim(args.sim_tag, sky_alm, **run_opts)
+    if args.analyze:
+        analyzis_dir = opj(basedir, "output")
+        analysis(
+            analyzis_dir = analyzis_dir, 
+            sim_tag = sim_tag, 
+            ideal_map = None, 
+            input_map = None,
+            calibrate = False, 
+            mask = None,
+            nside_out = 512, 
+            lmax = 700, 
+            l1 = 100, 
+            l2 = 300)
 
     return
 
