@@ -398,7 +398,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     Function to analyze simulation output 
     Arguments
     ---------
-    analysis_dir : string
+    analyzis_dir : string
         Path to the directory in which input maps are located, and where 
         the output spectra and maps directories are.
     sim_tag : string
@@ -438,7 +438,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     cond = hp.ud_grade(cond, nside)
 
     if mask:
-        custom_mask = hp.ud_grade(tools.read_map(opj(analysis_dir, mask)), nside)
+        custom_mask = hp.ud_grade(tools.read_map(opj(analyzis_dir, mask)), nside)
     else:
         custom_mask = np.ones_like(hits)
 
@@ -457,7 +457,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     #Versus ideal
     if ideal_map:
 
-        ideal_maps = tools.read_map(opj(outdir, ideal_map),
+        ideal_maps = tools.read_map(opj(analyzis_dir, ideal_map),
             field=None, fill=np.nan)
         ideal_maps = hp.ud_grade(ideal_maps, nside)
         
@@ -491,7 +491,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     #Versus input
     if input_map:
 
-        input_maps = tools.read_map(opj(outdir, input_map),
+        input_maps = tools.read_map(opj(analyzis_dir, input_map),
             field=None, fill=np.nan)
         input_maps = hp.ud_grade(input_maps, nside)
         
@@ -730,6 +730,8 @@ def main():
         dest="w_c")
     parser.add_argument("--filter_m", type=int, default=1, action="store", 
         dest="filter_m")
+
+    #Analysis arguments
     
 
 
@@ -824,12 +826,12 @@ def main():
         analysis(
             analyzis_dir = analyzis_dir, 
             sim_tag = sim_tag, 
-            ideal_map = None, 
-            input_map = None,
-            calibrate = False, 
-            mask = None,
-            nside_out = 512, 
-            lmax = 700, 
+            ideal_map = args.ideal_map, 
+            input_map = args.sky_map,
+            calibrate = args.calibrate, 
+            mask = args.mask,
+            nside_out = args.nside_out, 
+            lmax = args.lmax, 
             l1 = 100, 
             l2 = 300)
 
