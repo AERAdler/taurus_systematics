@@ -20,6 +20,24 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 from ground_tools import template_from_position
 
+def get_default_spice_opts(lmax=700, fsky=None):
+
+    if fsky is None:
+        fsky = 1.0
+
+    spice_opts = dict(nlmax=lmax,
+        apodizetype=1,
+        apodizesigma=180*fsky*0.8,
+        thetamax=180*fsky,
+        decouple=True,
+        symmetric_cl=True,
+        outroot=os.path.realpath(__file__),
+        verbose=0,
+        subav=False,
+        subdipole=True)
+
+    return spice_opts
+
 def run_sim(simname, sky_alm,
             basedir = opj("/","mn", "stornext", "u3", "aeadler", "ssn"),
             beamdir = "beams", outdir = opj("output", "maps"),
@@ -234,7 +252,6 @@ def run_sim(simname, sky_alm,
         hp.write_map(opj(basedir, outdir, "cond_"+simname+"_coadd.fits"),
                  co_added_cond)
     return
-
 
 def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000, 
                 stitch_wide=False, plot=False):
