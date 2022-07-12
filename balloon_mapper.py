@@ -433,12 +433,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     maps = tools.read_map(opj(analyzis_dir, filename), field=None, fill=np.nan)
     hits = tools.read_map(opj(analyzis_dir, filename.replace("maps_", "hits_")))
     cond = tools.read_map(opj(analyzis_dir, filename.replace("maps_", "cond_")))
-    maps = hp.ud_grade(maps, nside)
-    hits = hp.ud_grade(hits, nside)
-    cond = hp.ud_grade(cond, nside)
+    maps = hp.ud_grade(maps, nside_out)
+    hits = hp.ud_grade(hits, nside_out)
+    cond = hp.ud_grade(cond, nside_out)
 
     if mask:
-        custom_mask = hp.ud_grade(tools.read_map(opj(analyzis_dir, mask)), nside)
+        custom_mask = hp.ud_grade(tools.read_map(opj(analyzis_dir, mask)), nside_out)
     else:
         custom_mask = np.ones_like(hits)
 
@@ -459,7 +459,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
 
         ideal_maps = tools.read_map(opj(analyzis_dir, ideal_map),
             field=None, fill=np.nan)
-        ideal_maps = hp.ud_grade(ideal_maps, nside)
+        ideal_maps = hp.ud_grade(ideal_maps, nside_out)
         
         masked_ideal = ideal_maps.copy()
         #mask the ideal map on unscanned pixels and masked areas
@@ -493,7 +493,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
 
         input_maps = tools.read_map(opj(analyzis_dir, input_map),
             field=None, fill=np.nan)
-        input_maps = hp.ud_grade(input_maps, nside)
+        input_maps = hp.ud_grade(input_maps, nside_out)
         
         masked_input = input_maps.copy()
         #mask the input map on unscanned pixels and masked areas
@@ -732,9 +732,14 @@ def main():
         dest="filter_m")
 
     #Analysis arguments
-    
-
-
+    parser.add_argument("--ideal_map", type=str, action="store", default=None, 
+	help="ideal map for comparaison", dest="ideal_map") 
+    parser.add_argument("--input_map", type=str, action="store", default=None, 
+	help="input map for comparaison", dest="input_map") 
+    parser.add_argument("--mask", type=str, default=None, action="store",
+	help="Mask for analysis", dest="mask")
+    parser.add_argument("--calibrate", default=False, action="store_true", 
+        dest="calibrate", help="Calibrate vs ideal or input") 
     args = parser.parse_args()
 
     if args.system=="OwlAEA":
@@ -754,7 +759,7 @@ def main():
         npairs = args.npairs
         beam_files = args.beam_file
 
-    else: 
+    elif not args.analyze: 
         bfi = open(opj(beamdir, args.beam_file))
         beam_files = bfi.read().splitlines()
         bfi.close()
@@ -825,7 +830,7 @@ def main():
         analyzis_dir = opj(basedir, "output")
         analysis(
             analyzis_dir = analyzis_dir, 
-            sim_tag = sim_tag, 
+            sim_tag = args.sim_tag, 
             ideal_map = args.ideal_map, 
             input_map = args.sky_map,
             calibrate = args.calibrate, 
