@@ -482,10 +482,9 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         
         masked_ideal = ideal_maps.copy()
         #mask the ideal map on unscanned pixels and masked areas
-        if mask:
-            mask = ~np.isnan(hits)
-            for mi in masked_ideal:
-                mi[~mask] = np.nan
+        mask = ~np.isnan(hits)
+        for mi in masked_ideal:
+            mi[~mask] = np.nan
         #Calibration
         if calibrate:
             cl_ideal = tools.spice(masked_ideal, mask=mask, **spice_opts2use)
@@ -499,9 +498,8 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             gain_dec = 1.
         #Should difference maps be gain_corrected?
         diff_ideal = maps*np.sqrt(gain_dec) - ideal_maps
-        if mask:
-            for diffi in diff_ideal:
-                diffi[~mask] = np.nan
+        for diffi in diff_ideal:
+            diffi[~mask] = np.nan
         diff_ideal_cl = tools.spice(diff_ideal, mask=mask, **spice_opts2use)
         diff_ideal_cl = diff_ideal_cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
                                          lmax=len(diff_ideal_cl[1])-1)**2)
@@ -517,10 +515,9 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         
         masked_input = input_maps.copy()
         #mask the input map on unscanned pixels and masked areas
-        if mask:
-            mask = ~np.isnan(hits)
-            for mi in masked_input:
-                mi[~mask] = np.nan
+        mask = ~np.isnan(hits)
+        for mi in masked_input:
+            mi[~mask] = np.nan
         #Calibration
         if calibrate:
             cl_input= tools.spice(masked_input, mask=mask, **spice_opts2use)
@@ -534,9 +531,8 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             gain_dec = 1.
         #Should difference maps be gain_corrected?
         diff_input = maps*np.sqrt(gain_dec) - input_maps
-        if mask:
-            for diffi in diff_input:
-                diffi[~mask] = np.nan
+        for diffi in diff_input:
+            diffi[~mask] = np.nan
         diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
         diff_input_cl = diff_input_cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
                                          lmax=len(diff_input_cl[1])-1)**2)
