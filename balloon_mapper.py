@@ -8,6 +8,7 @@ from beamconv import tools as beam_tools
 import pipeline_tools as tools
 import qpoint as qp
 import matplotlib.pyplot as plt
+import matplotlib.cm as cm
 import pickle
 import time
 import datetime
@@ -410,7 +411,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
 
 def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
              calibrate=False, mask=None, nside_out=512, lmax=700, 
-             l1=100, l2=300):
+             l1=100, l2=300, fwhm=60.):
     """
     Function to analyze simulation output 
     Arguments
@@ -444,6 +445,8 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         Lower edge of the calibration window. (default: 100)
     l2 : int
         Higher edge of the calibration window. (default: 300)
+    fwhm : float
+        fwhm of the beam in arcmin. (default: 60.)
     """
 
     filename = "maps_"+sim_tag+".fits"
@@ -461,11 +464,10 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
 
     hits_mask = hits * custom_mask
     fsky = np.sum(hits_mask > 0.) / float(len(hits_mask))
-
+    print("fsky: ",fsky)
     spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
     hits[hits == 0] = np.nan
     hits[custom_mask==0] = np.nan
-
     cl = tools.spice(maps, mask=mask, **spice_opts2use)
     cl = cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)**2)
     np.save(opj(analyzis_dir, "spectra", "{}_spectra.npy".format(sim_tag)), cl)
@@ -491,14 +493,15 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
                                                  lmax=len(cl_ideal[1])-1)**2)
             #Compute Cls for the smoothed map, deconvolve
             gain_dec = np.average(cl_ideal[0, l1:l2]/cl[0, l1:l2])
-            print("Gain for map {} is: {:.3f}".format(sim_tag, gain_dec))
+            print("Gain for map {} versus ideal is: {:.3f}".format(sim_tag,
+                  gain_dec))
         else:
             gain_dec = 1.
         #Should difference maps be gain_corrected?
         diff_ideal = maps*np.sqrt(gain_dec) - ideal_maps
-
-        for diffi in diff_ideal:
-            diffi[~mask] = np.nan
+        if mask:
+            for diffi in diff_ideal:
+                diffi[~mask] = np.nan
         diff_ideal_cl = tools.spice(diff_ideal, mask=mask, **spice_opts2use)
         diff_ideal_cl = diff_ideal_cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
                                          lmax=len(diff_ideal_cl[1])-1)**2)
@@ -525,14 +528,15 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
                                                  lmax=len(cl_input[1])-1)**2)
             #Compute Cls for the smoothed map, deconvolve
             gain_dec = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
-            print("Gain for map {} is: {:.3f}".format(sim_tag, gain_dec))
+            print("Gain for map {} versus input is: {:.3f}".format(
+                  sim_tag, gain_dec))
         else:
             gain_dec = 1.
         #Should difference maps be gain_corrected?
         diff_input = maps*np.sqrt(gain_dec) - input_maps
-
-        for diffi in diff_input:
-            diffi[~mask] = np.nan
+        if mask:
+            for diffi in diff_input:
+                diffi[~mask] = np.nan
         diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
         diff_input_cl = diff_input_cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
                                          lmax=len(diff_input_cl[1])-1)**2)
@@ -541,7 +545,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
 
 
     img_dir = opj(analyzis_dir, "images")
-    cmap4maps = matplotlib.cm.RdBu_r
+    cmap4maps = cm.RdBu_r
     cmap4maps.set_under("w")
     cmap4maps.set_bad("black", 0.5)
     fstrs = ["TT", "EE", "BB", "TE", "TB", "EB"]
@@ -629,6 +633,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             plt.close()
 
     """
+    return
 
 def main():
 
@@ -853,7 +858,8 @@ def main():
             calibrate = args.calibrate, 
             mask = args.mask,
             nside_out = args.nside_out, 
-            lmax = args.lmax, 
+            lmax = args.lmax,
+            fwhm = args.fwhm, 
             l1 = 100, 
             l2 = 300)
 
