@@ -243,6 +243,7 @@ def run_sim(simname, sky_alm,
             co_added_cond[maps[0]!=hp.UNSEEN] = np.minimum(
                 cond[maps[0]!=hp.UNSEEN], co_added_cond[maps[0]!=hp.UNSEEN])
             days_visited[maps[0]!=hp.UNSEEN] += 1
+    
     if scan.mpi_rank==0:
 
         co_added_maps[:,days_visited!=0] /= days_visited[days_visited!=0]
