@@ -190,7 +190,7 @@ def run_sim(simname, sky_alm,
                              sensitive_freq=freq, deconv_q=deconv_q)
             nfloor = int(np.floor(np.sqrt(npairs)))
             if btype=="PO":
-                beam_opts["po_file"] = beam_files#It"s just the one file, actually
+                beam_opts["po_file"] = beam_files#It"s just one file here
             scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov,
                     **beam_opts)
 
@@ -222,10 +222,11 @@ def run_sim(simname, sky_alm,
                                     lmax = lmax)
                 ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
             else:
-                ground_alm = np.zeros((3,hp.Alm.getsize(lmax=lmax)), dtype=complex)
+                ground_alm = np.zeros((3,hp.Alm.getsize(lmax)), dtype=complex)
             comm.Bcast(ground_alm, root=0)
 
-            scan.scan_instrument_mpi(sky_alm, ground_alm=ground_alm, **scan_opts)
+            scan.scan_instrument_mpi(sky_alm, ground_alm=ground_alm, 
+                                     **scan_opts)
         
         else:
             scan.scan_instrument_mpi(sky_alm, **scan_opts)
@@ -411,7 +412,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
     sat.barrier()
 
 def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
-             calibrate=False, mask=None, nside_out=512, lmax=700, 
+             calibrate=False, mask_file=None, nside_out=512, lmax=700, 
              l1=100, l2=300, fwhm=60.):
     """
     Function to analyze simulation output 
@@ -458,17 +459,20 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     hits = hp.ud_grade(hits, nside_out)
     cond = hp.ud_grade(cond, nside_out)
 
-    if mask:
-        custom_mask = hp.ud_grade(tools.read_map(opj(analyzis_dir, mask)), nside_out)
+    if mask_file:
+        custom_mask = hp.ud_grade(tools.read_map(opj(analyzis_dir, mask)), 
+                                  nside_out)
+        hits_mask = hits * custom_mask
+        fsky = np.sum(hits_mask > 0.) / float(len(hits_mask))
     else:
-        custom_mask = np.ones_like(hits)
-
-    hits_mask = hits * custom_mask
-    fsky = np.sum(hits_mask > 0.) / float(len(hits_mask))
-    print("fsky: ",fsky)
-    spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
+        fsky = np.sum(hits > 0.) / float(len(hits))
+    print("fsky: {:.3f}".format(fsky))
     hits[hits == 0] = np.nan
-    hits[custom_mask==0] = np.nan
+    if mask_file:
+        hits[custom_mask==0] = np.nan
+
+    mask = ~np.isnan(hits)
+    spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
     cl = tools.spice(maps, mask=mask, **spice_opts2use)
     cl = cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)**2)
     np.save(opj(analyzis_dir, "spectra", "{}_spectra.npy".format(sim_tag)), cl)
@@ -483,7 +487,6 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         
         masked_ideal = ideal_maps.copy()
         #mask the ideal map on unscanned pixels and masked areas
-        mask = ~np.isnan(hits)
         for mi in masked_ideal:
             mi[~mask] = np.nan
         #Calibration
@@ -525,13 +528,14 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             cl_input = cl_input/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
                                                  lmax=len(cl_input[1])-1)**2)
             #Compute Cls for the smoothed map, deconvolve
-            gain_dec = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
+            gain_TT = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
+            gain_EE = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
             print("Gain for map {} versus input is: {:.3f}".format(
                   sim_tag, gain_dec))
         else:
-            gain_dec = 1.
-        #Should difference maps be gain_corrected?
-        diff_input = maps*np.sqrt(gain_dec) - input_maps
+            gain_TT= 1.
+
+        diff_input = maps*np.sqrt(gain_TT) - input_maps
         for diffi in diff_input:
             diffi[~mask] = np.nan
         diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
@@ -554,12 +558,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     for f in range(6):
         plt.figure(f)
         ell = np.arange(len(cl[f]))
-        plt.plot(ell[5:], gain_dec * ell[5:] * (ell[5:] + 1) * cl[f][5:] / 2. / np.pi,
+        plt.plot(ell[5:], gain_dec*ell[5:]*(ell[5:]+1)*cl[f][5:]/2./np.pi,
             label=label,
             color=cmap(i))
         
         #plotting input spectra
-        plt.plot(ell[5:], gain_dec * ell[5:] * (ell[5:] + 1) * cl_input[f][5:] / 2. / np.pi,
+        plt.plot(ell[5:], gain_dec*ell[5:]*(ell[5:]+1)*cl_input[f][5:]/2./np.pi,
             label="input_map", lss="--",
             color=cmap(i))
     
@@ -572,12 +576,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     for f in range(6):
         plt.figure(f+6)
         ell = np.arange(len(diff_cl[f]))
-        plt.plot(ell[5:], ell[5:] * (ell[5:] + 1) * diff_cl[f][5:] / 2. / np.pi,
+        plt.plot(ell[5:], ell[5:]*(ell[5:]+1)*diff_cl[f][5:]/2./np.pi,
             label=label if j==0 else None, ls=lss[i],
             color=cmap(i))
 
         #plotting the input difference spectra
-        plt.plot(ell[5:], ell[5:] * (ell[5:] + 1) * diff_cl_input[f][5:] / 2. / np.pi,
+        plt.plot(ell[5:], ell[5:]*(ell[5:]+1)*diff_cl_input[f][5:]/2./np.pi,
             label="input_map", ls="--",
             color=cmap(i))
 
@@ -647,12 +651,12 @@ def main():
     #Beams
     parser.add_argument("--beamdir", type=str, dest="beamdir", default=None,
         help="Path to beamdir, overrides system beam dir")
-    parser.add_argument("--beam_file", action="store", dest="beam_file", type=str,
-        default=None, help="Text file listing beams to use")
+    parser.add_argument("--beam_file", action="store", dest="beam_file", 
+        type=str, default=None, help="Text file listing beams to use")
     parser.add_argument("--beam_lmax", action="store", dest="beam_lmax",
         default=2000, type=int, help="Maximum lmax for beam decomposition")
-    parser.add_argument("--beam_type", type=str, dest="btype", default="Gaussian",
-        help="Input beam type: [Gaussian, PO]")
+    parser.add_argument("--beam_type", type=str, dest="btype", 
+        default="Gaussian", help="Input beam type: [Gaussian, PO]")
     parser.add_argument("--stitch_wide", action="store_true", dest="stitch_wide",
         default=False, help="stitch wide GRASP cuts to main beam files")
     parser.add_argument("--plot_beam", action="store_true", dest="plot_beam",
@@ -722,16 +726,16 @@ def main():
     # HWP-related
     parser.add_argument("--hwp_mode", action="store", dest="hwp_mode", type=str,
         default=None)
-    parser.add_argument("--hwp_model", action="store", dest="hwp_model", type=str,
-        default="ideal")
+    parser.add_argument("--hwp_model", action="store", dest="hwp_model", 
+        type=str, default="ideal")
     parser.add_argument("--hwp_phase", action="store", dest="varphi",
         type=float, default=0.)
     parser.add_argument("--hfreq", action="store", dest="hfreq", type=float,
         default=1.0)
     parser.add_argument("--hstepf", action="store", dest="hstepf", type=float,
         default=1./(3*3600))
-    parser.add_argument("--filter_4fhwp", action="store_true", dest="filter_4fhwp",
-        default=False)
+    parser.add_argument("--filter_4fhwp", action="store_true", 
+        dest="filter_4fhwp", default=False)
 
     # Map arguments
     parser.add_argument("--alm_type", action="store", dest="alm_type", type=str,
@@ -743,8 +747,9 @@ def main():
     parser.add_argument("--balloon_track", type=str, default=None,
         help="Balloon path file", dest="balloon_track")
     #TOD filters
-    parser.add_argument("--filter_highpass", dest="filter_highpass", default=False,
-        help="Substract mean of ground tod chunk per chunk", action="store_true")
+    parser.add_argument("--filter_highpass", dest="filter_highpass", 
+        default=False, help="Substract mean of tod per chunk", 
+        action="store_true")
     parser.add_argument("--w_c", type=float, default=None, action="store", 
         dest="w_c")
     parser.add_argument("--filter_m", type=int, default=1, action="store", 
@@ -790,7 +795,8 @@ def main():
 
     if args.run:
         if args.alm_type=="synfast":
-            cls = np.loadtxt(opj(basedir,"wmap7_r0p03_lensed_uK_ext.txt"), unpack=True)
+            cls = np.loadtxt(opj(basedir,"wmap7_r0p03_lensed_uK_ext.txt"), 
+                    unpack=True)
             ell, cls = cls[0], cls[1:]
             np.random.seed(25) 
             sky_alm = hp.synalm(cls, lmax=args.lmax, new=True, verbose=True)
@@ -853,9 +859,9 @@ def main():
             ideal_map = args.ideal_map, 
             input_map = args.sky_map,
             calibrate = args.calibrate, 
-            mask = args.mask,
+            mask_file = args.mask,
             nside_out = args.nside_out, 
-            lmax = args.lmax,
+            lmax = 600,
             fwhm = args.fwhm, 
             l1 = 100, 
             l2 = 300)
