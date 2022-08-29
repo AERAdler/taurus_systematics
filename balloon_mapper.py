@@ -470,11 +470,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     hits[hits == 0] = np.nan
     if mask_file:
         hits[custom_mask==0] = np.nan
-
     mask = ~np.isnan(hits)
+    for ma in maps:
+            ma[~mask] = np.nan
     spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
     cl = tools.spice(maps, mask=mask, **spice_opts2use)
-    cl = cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)**2)
+    #cl = cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)**2)
     np.save(opj(analyzis_dir, "spectra", "{}_spectra.npy".format(sim_tag)), cl)
 
     
@@ -492,8 +493,8 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         #Calibration
         if calibrate:
             cl_ideal = tools.spice(masked_ideal, mask=mask, **spice_opts2use)
-            cl_ideal = cl_ideal/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
-                                                 lmax=len(cl_ideal[1])-1)**2)
+            #cl_ideal = cl_ideal/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
+            #                                     lmax=len(cl_ideal[1])-1)**2)
             #Compute Cls for the smoothed map, deconvolve
             gain_dec = np.average(cl_ideal[0, l1:l2]/cl[0, l1:l2])
             print("Gain for map {} versus ideal is: {:.3f}".format(sim_tag,
