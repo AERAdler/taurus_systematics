@@ -29,7 +29,7 @@ def get_default_spice_opts(lmax=700, fsky=None):
 
 def mask_and_spice(ell, nside=512, fwhm=45., lmax_analysis=700):
 
-    mask = hp.ud_grade(hp.read_map("smoothed_gal040.fits"), nside_out=nside)
+    mask = np.ones(12*nside**2)#hp.ud_grade(hp.read_map("smoothed_gal040.fits"), nside_out=nside)
     fsky = np.sum(mask)/(12*nside**2)
     maps = hp.alm2map(sky_alm, nside=nside, fwhm=np.radians(fwhm/60.))
     spice_opts2use = get_default_spice_opts(lmax=lmax_analysis, fsky=fsky)
@@ -58,7 +58,7 @@ plt.ylim(0, 60)
 plt.legend()
 plt.xlabel(r"Multipole $\ell$")
 plt.ylabel(r"$D_\ell^{EE}$")
-plt.title("Galaxy mask, NSIDE = 512")
+plt.title("Unmasked, NSIDE = 512")
 
 plt.figure(2)
 for nside in nside_list:
@@ -71,5 +71,5 @@ plt.ylim(0, 60)
 plt.legend()
 plt.xlabel(r"Multipole $\ell$")
 plt.ylabel(r"$D_\ell^{EE}$")
-plt.title("Galaxy mask, fwhm=50\'")
+plt.title("Unmasked, fwhm=50\'")
 plt.show()
