@@ -39,6 +39,35 @@ def get_default_spice_opts(lmax=700, fsky=None):
 
     return spice_opts
 
+def autoscale_y(ax, margin=0.1):
+    '''
+    This function rescales the y-axis based on the data that is visible given the
+    current xlim of the axis.
+    ax : a matplotlib axes object
+    margin : the fraction of the total height of the y-data to pad
+    the upper and lower ylims
+    '''
+
+    def get_bottom_top(line):
+        xd = line.get_xdata()
+        yd = line.get_ydata()
+        lo,hi = ax.get_xlim()
+        y_displayed = yd[((xd>lo) & (xd<hi))]
+        h = np.max(y_displayed) - np.min(y_displayed)
+        bot = np.min(y_displayed)-margin*h
+        top = np.max(y_displayed)+margin*h
+        return bot,top
+
+    lines = ax.get_lines()
+    bot,top = np.inf, -np.inf
+
+    for line in lines:
+        new_bot, new_top = get_bottom_top(line)
+        if new_bot < bot: bot = new_bot
+        if new_top > top: top = new_top
+
+    ax.set_ylim(bot,top)
+
 def run_sim(simname, sky_alm,
             basedir = opj("/","mn", "stornext", "u3", "aeadler", "ssn"),
             beamdir = "beams", outdir = opj("output", "maps"),
@@ -413,7 +442,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
 
 def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
              calibrate=False, mask_file=None, nside_out=512, lmax=700, 
-             l1=100, l2=300, fwhm=60.):
+             l1=100, l2=300, fwhm=60., plot=False, label=None):
     """
     Function to analyze simulation output 
     Arguments
@@ -449,6 +478,10 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         Higher edge of the calibration window. (default: 300)
     fwhm : float
         fwhm of the beam in arcmin. (default: 60.)
+    plot : bool
+        Whether to plot the spectra we have 
+    label : string
+        What the non-ideality is called on the legend
     """
 
     filename = "maps_"+sim_tag+".fits"
@@ -553,10 +586,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         for diffi in diff_input:
             diffi[~mask] = np.nan
         diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
-        diff_input_dl = diff_input_cl/bl**2
+        diff_input_cl = diff_input_cl/bl**2
         np.save(opj(analyzis_dir, "spectra", 
                     "{}_diff_input_spectra.npy".format(sim_tag)), diff_input_cl)
 
+    if not plot:
+        return 
 
     img_dir = opj(analyzis_dir, "images")
     cmap4maps = cm.RdBu_r
@@ -564,27 +599,79 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     cmap4maps.set_bad("black", 0.5)
     fstrs = ["TT", "EE", "BB", "TE", "TB", "EB"]
     cmap = plt.get_cmap("tab10")
+    xlmax = 400
 
-    #HERE BE PLOTTING
-    
-    """
     for f in range(6):
         plt.figure(f)
         ell = np.arange(len(cl[f]))
-        plt.plot(ell[5:], gain_dec*ell[5:]*(ell[5:]+1)*cl[f][5:]/2./np.pi,
-            label=label,
-            color=cmap(i))
-        
+        #Truncate to start in l=4
+        ell = ell[5:]
+        plt.plot(ell, ell*(ell+1)/(2*np.pi)*gain_dec*cl[f][5:], label=label)
+        #Plot ideal spectrum
+        if ideal_map:
+            plt.plot(ell, ell*(ell+1)/(2*np.pi)*cl_ideal[f][5:], label="Ideal", 
+                ls="-.")
+
+            #Plot the difference spectra on extra plots
+            plt.figure(f+6)
+            plt.plot(ell, ell*(ell+1)/(2*np.pi)*diff_ideal_cl[f][5:], 
+                label="Residuals of "+str(label)+" vs ideal")
+            plt.figure(f)
+
+        if input_map:
         #plotting input spectra
-        plt.plot(ell[5:], gain_dec*ell[5:]*(ell[5:]+1)*cl_input[f][5:]/2./np.pi,
-            label="input_map", lss="--",
-            color=cmap(i))
-    
+            plt.plot(ell, ell*(ell+1)/(2*np.pi)*cl_input[f][5:], label="Input",
+                ls="--", color="k")
+            plt.figure(f+6)
+            plt.plot(ell, ell*(ell+1)/(2*np.pi)*diff_input_cl[f][5:], 
+                label="Residuals of "+str(label)+" vs input", ls="--")
+            plt.figure(f)
+
+        #Labeling plots
+        plt.legend(loc=2, frameon=False)
+        plt.xlabel(r"Multipole, $\ell$")
+        plt.ylabel(r"$D_\ell^{{}}$".format(fstrs[f]))
+        plt.xlim([0, xlmax])
+
+       if f != 2:
+            autoscale_y(plt.gca())
+            plt.xlim([1,xlmax])
+
+        img_name = sim_tag+"_"+"spec{}.png".format(fstrs[f])
+        plt.savefig(opj(outdir, img_dir, img_name),
+                bbox_inches="tight", dpi=300)
+        plt.close()
+
+        if input_map or ideal_map:
+            #Add BB contours
+            plt.figure(f+6)
+
+            if f == 2:
+                #plot_bb(outdir)
+                plt.gca().set_yscale("log")
+                plt.gca().set_xscale("log")
+                plt.xlim([1,xlmax])
+                plt.ylim([1e-6, 1e-1])
+
+            plt.legend(loc=2, frameon=False)
+            plt.xlabel(r"Multipole, $\ell$")
+            plt.ylabel(r"$D_\ell^{{}}$".format(fstrs[f]))
+            plt.xlim([1, xlmax])
+            if f != 2:
+                autoscale_y(plt.gca())
+            img_name = sim_tag+"_"+"dspec{}.png".format(fstrs[f])
+            plt.savefig(opj(outdir, img_dir, img_name),
+                bbox_inches="tight", dpi=300)
+            plt.close()
+
+
+
+
 
     # plot_tools.plot_iqu(maps, opj(outdir, img_dir), mname,
     #     plot_func=hp.mollview, cmap=cmap4maps, tight=True, title=",
     #     sym_limits=[300, 5, 5])
-
+    """
     # Plotting difference maps
     for f in range(6):
         plt.figure(f+6)
@@ -603,12 +690,6 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         for f in range(6):
 
             plt.figure(f)
-            if f == 2:
-                plot_bb(outdir)
-                plt.gca().set_yscale("log")
-                plt.gca().set_xscale("log")
-                plt.xlim([1,xlmax])
-                plt.ylim([1e-6, 1e-1])
 
             plt.legend(loc=2)
             plt.xlabel("Multipole, $\ell$")
