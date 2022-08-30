@@ -458,7 +458,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     maps = hp.ud_grade(maps, nside_out)
     hits = hp.ud_grade(hits, nside_out)
     cond = hp.ud_grade(cond, nside_out)
-
+    """"
     if mask_file:
         custom_mask = hp.ud_grade(tools.read_map(opj(analyzis_dir, mask)), 
                                   nside_out)
@@ -473,10 +473,23 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     mask = ~np.isnan(hits)
     for ma in maps:
             ma[~mask] = np.nan
+    """
+    #Rectangular mask
+    mask = np.ones(12*nside_out**2)
+    theta, phi = hp.pix2ang(nside_out, np.arange(12*nside_out**2))
+    max_dec = np.radians(20.)
+    min_dec = np.radians(-80.)
+    dec_centre = .5*(max_dec+min_dec)
+    dec_hwidth = .5*(max_dec-min_dec)
+    mask[np.abs(theta-dec_centre)>dec_hwidth]=0.
+    fsky = np.sum(mask)/(12*nside_out**2)
     spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
+
     cl = tools.spice(maps, mask=mask, **spice_opts2use)
-    #cl = cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)**2)
-    np.save(opj(analyzis_dir, "spectra", "{}_spectra.npy".format(sim_tag)), cl)
+    bl = hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)
+    cl = cl/bl**2
+    np.save(opj(analyzis_dir, "spectra", 
+            "{}_spectra_rect.npy".format(sim_tag)), cl)
 
     
     #Versus ideal
@@ -489,12 +502,13 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         masked_ideal = ideal_maps.copy()
         #mask the ideal map on unscanned pixels and masked areas
         for mi in masked_ideal:
-            mi[~mask] = np.nan
+            mi[mask[:]==0] = 0.
         #Calibration
         if calibrate:
             cl_ideal = tools.spice(masked_ideal, mask=mask, **spice_opts2use)
-            #cl_ideal = cl_ideal/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
-            #                                     lmax=len(cl_ideal[1])-1)**2)
+            cl_ideal = cl_ideal/bl**2
+            np.save(opj(analyzis_dir, "spectra", 
+                   "{}_idealspectra_rect.npy".format(sim_tag)), cl_ideal)
             #Compute Cls for the smoothed map, deconvolve
             gain_dec = np.average(cl_ideal[0, l1:l2]/cl[0, l1:l2])
             print("Gain for map {} versus ideal is: {:.3f}".format(sim_tag,
@@ -504,10 +518,9 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         #Should difference maps be gain_corrected?
         diff_ideal = maps*np.sqrt(gain_dec) - ideal_maps
         for diffi in diff_ideal:
-            diffi[~mask] = np.nan
+            diffi[mask[:]==0] = 0.
         diff_ideal_cl = tools.spice(diff_ideal, mask=mask, **spice_opts2use)
-        diff_ideal_cl = diff_ideal_cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
-                                         lmax=len(diff_ideal_cl[1])-1)**2)
+        diff_ideal_cl = diff_ideal_cl/bl**2
         np.save(opj(analyzis_dir, "spectra", 
                     "{}_diff_ideal_spectra.npy".format(sim_tag)), diff_ideal_cl)
 
@@ -526,8 +539,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         #Calibration
         if calibrate:
             cl_input= tools.spice(masked_input, mask=mask, **spice_opts2use)
-            cl_input = cl_input/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
-                                                 lmax=len(cl_input[1])-1)**2)
+            cl_input = cl_input/bl**2
             #Compute Cls for the smoothed map, deconvolve
             gain_TT = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
             gain_EE = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
@@ -540,8 +552,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         for diffi in diff_input:
             diffi[~mask] = np.nan
         diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
-        diff_input_cl = diff_input_cl/(hp.gauss_beam(fwhm=np.radians(fwhm/60.), 
-                                         lmax=len(diff_input_cl[1])-1)**2)
+        diff_input_dl = diff_input_cl/bl**2
         np.save(opj(analyzis_dir, "spectra", 
                     "{}_diff_input_spectra.npy".format(sim_tag)), diff_input_cl)
 
