@@ -633,12 +633,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         plt.ylabel(r"$D_\ell^{{}}$".format(fstrs[f]))
         plt.xlim([0, xlmax])
 
-       if f != 2:
+        if f != 2:
             autoscale_y(plt.gca())
             plt.xlim([1,xlmax])
 
         img_name = sim_tag+"_"+"spec{}.png".format(fstrs[f])
-        plt.savefig(opj(outdir, img_dir, img_name),
+        plt.savefig(opj(analyzis_dir, img_dir, img_name),
                 bbox_inches="tight", dpi=300)
         plt.close()
 
@@ -660,7 +660,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             if f != 2:
                 autoscale_y(plt.gca())
             img_name = sim_tag+"_"+"dspec{}.png".format(fstrs[f])
-            plt.savefig(opj(outdir, img_dir, img_name),
+            plt.savefig(opj(analyzis_dir, img_dir, img_name),
                 bbox_inches="tight", dpi=300)
             plt.close()
 
@@ -794,6 +794,10 @@ def main():
 	help="Mask for analysis", dest="mask")
     parser.add_argument("--calibrate", default=False, action="store_true", 
         dest="calibrate", help="Calibrate vs ideal or input") 
+    parser.add_argument("--plot", default=False, action="store_true", 
+        dest="plot", help="Plot spectra") 
+    parser.add_argument("--label", type=str, action="store", default=None, 
+	help="Label of non-ideality on plots", dest="label") 
     args = parser.parse_args()
 
     if args.system=="OwlAEA":
@@ -894,7 +898,9 @@ def main():
             lmax = 600,
             fwhm = args.fwhm, 
             l1 = 100, 
-            l2 = 300)
+            l2 = 300,
+            plot = args.plot,
+            label = args.label)
 
     return
 
