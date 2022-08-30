@@ -479,12 +479,13 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     theta, phi = hp.pix2ang(nside_out, np.arange(12*nside_out**2))
     max_dec = np.radians(20.)
     min_dec = np.radians(-80.)
-    dec_centre = .5*(max_dec+min_dec)
+    dec_centre = .5*np.pi - .5*(max_dec+min_dec)
     dec_hwidth = .5*(max_dec-min_dec)
     mask[np.abs(theta-dec_centre)>dec_hwidth]=0.
     fsky = np.sum(mask)/(12*nside_out**2)
     spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
 
+    print("fsky is {:.2f}".format(fsky))
     cl = tools.spice(maps, mask=mask, **spice_opts2use)
     bl = hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)
     cl = cl/bl**2
@@ -511,7 +512,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
                    "{}_idealspectra_rect.npy".format(sim_tag)), cl_ideal)
             #Compute Cls for the smoothed map, deconvolve
             gain_dec = np.average(cl_ideal[0, l1:l2]/cl[0, l1:l2])
-            print("Gain for map {} versus ideal is: {:.3f}".format(sim_tag,
+            print("TT Gain for map {} versus ideal is: {:.3f}".format(sim_tag,
                   gain_dec))
         else:
             gain_dec = 1.
