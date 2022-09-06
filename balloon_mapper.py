@@ -78,7 +78,7 @@ def run_sim(simname, sky_alm,
             ghost_amp=0.01, scan_type="atacama", el0=35., az0=0., freq=150., 
             ground = None, filter_highpass=False, w_c=None, filter_m=1,
             hwp_mode=None, hwp_model="HWP_only", load_mueller=False, varphi=0.0, 
-            hfreq=1.0, hstepf=1/(3*60*60), filter_4fhwp=False, nside_spin=1024, 
+            hfreq=1.0, hstepf=1/(12.*60*60), filter_4fhwp=False, nside_spin=1024, 
             nside_out=512, verbose=1, balloon_track = None, killfrac=0., 
             seed=25, preview_pointing=False, comm=None, **kwargs):
     """
@@ -234,8 +234,15 @@ def run_sim(simname, sky_alm,
                 beami[1].set_hwp_mueller(model_name=hwp_model) 
         scan.partition_mission(chunksize=int(sample_rate*3600))
         scan.allocate_maps(nside=512)
-        scan.set_hwp_mod(mode=hwp_mode, freq=1.)
-        if filter_highpass and (w_c is not None):
+        
+        hwpf = 0.
+        if hwp_mode == "stepped":
+            hwpf = hstepf
+        elif hwp_mode == "continuous":
+            hwpf = hfreq   
+        scan.set_hwp_mod(mode=hwp_mode, freq=hwpf)
+        
+       if filter_highpass and (w_c is not None):
             scan.set_filter_dict(w_c, m=filter_m)
 
         if ground:
@@ -763,7 +770,7 @@ def main():
     parser.add_argument("--hfreq", action="store", dest="hfreq", type=float,
         default=1.0)
     parser.add_argument("--hstepf", action="store", dest="hstepf", type=float,
-        default=1./(3*3600))
+        default=1./(12*3600))
     parser.add_argument("--filter_4fhwp", action="store_true", 
         dest="filter_4fhwp", default=False)
 
