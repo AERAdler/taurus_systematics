@@ -190,6 +190,7 @@ def run_sim(simname, sky_alm,
     co_added_hits = np.zeros((hp.nside2npix(nside_out)))
     days_visited = np.zeros(hp.nside2npix(nside_out))
     for day in range(ndays):
+        print("{:d}GHz, day {:d}".format(int(freq), day))
         ctime0 = t0+day*24*60*60
         track_idx = np.argmin(np.absolute(track[:,0]-ctime0))
         lat = track[track_idx,1]
@@ -242,7 +243,7 @@ def run_sim(simname, sky_alm,
             hwpf = hfreq   
         scan.set_hwp_mod(mode=hwp_mode, freq=hwpf)
         
-       if filter_highpass and (w_c is not None):
+        if filter_highpass and (w_c is not None):
             scan.set_filter_dict(w_c, m=filter_m)
 
         if ground:
@@ -517,7 +518,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     #Rectangular mask
     mask = np.ones(12*nside_out**2)
     theta, phi = hp.pix2ang(nside_out, np.arange(12*nside_out**2))
-    max_dec = np.radians(20.)
+    max_dec = np.radians(220.)
     min_dec = np.radians(-80.)
     dec_centre = .5*np.pi - .5*(max_dec+min_dec)
     dec_hwidth = .5*(max_dec-min_dec)
@@ -637,10 +638,10 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         #Labeling plots
         plt.legend(loc=2, frameon=False)
         plt.xlabel(r"Multipole, $\ell$")
-        plt.ylabel(r"$D_\ell^{{}}$".format(fstrs[f]))
+        plt.ylabel(r"$D_\ell^{{{}}}$".format(fstrs[f]))
         plt.xlim([0, xlmax])
 
-        if f != 2:
+        if f !=12:#Let be for now...
             autoscale_y(plt.gca())
             plt.xlim([1,xlmax])
 
@@ -658,11 +659,11 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
                 plt.gca().set_yscale("log")
                 plt.gca().set_xscale("log")
                 plt.xlim([1,xlmax])
-                plt.ylim([1e-6, 1e-1])
+                plt.ylim([1e-5, 1e0])
 
             plt.legend(loc=2, frameon=False)
             plt.xlabel(r"Multipole, $\ell$")
-            plt.ylabel(r"$D_\ell^{{}}$".format(fstrs[f]))
+            plt.ylabel(r"$D_\ell^{{{}}}$".format(fstrs[f]))
             plt.xlim([1, xlmax])
             if f != 2:
                 autoscale_y(plt.gca())
