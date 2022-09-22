@@ -357,77 +357,86 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
 
         print("Rank = {:03d} | bidx = {:03d} | filename = {}".\
             format(sat.mpi_rank, bidx, beam_file))
+        for det in ["A","B"]:
+            # fields
+            pk_file = open(opj(beamdir, beam_file+"_{}_fields.pkl".format(det)
+                              ), "rb")
+            peak_fields = pickle.load(pk_file)
+            pkl_file.close()
+            prop_file = open(opj(beamdir, beam_file+"_"+det+"_prop.pkl"), "rb")
+            prop = pickle.load(prop_file)
+            prop_file.close()
+            e_co = peak_fields["e_co"]
+            e_cx = peak_fields["e_cx"]
+            invert_flag=False
+            #Sanity check that we have the main field in the right order
+            if np.sum(np.absolute(e_co))<np.sum(np.absolute(e_cx)):
+                e_co = peak_fields["e_cx"]
+                e_cx = peak_fields["e_co"]
+                print("Inverted eco and ecx!")
+                invert_flag=True
 
-        # fields
-        pkl_file = open(opj(beamdir, beam_file +"_fields.pkl"), "rb")
-        fields = pickle.load(pkl_file)
-        pkl_file.close()
-        e_co = fields["e_co"]
-        e_cx = fields["e_cx"]
-        invert_flag=False
-        #Sanity check that we have the main field in the right order
-        if np.sum(np.absolute(e_co))<np.sum(np.absolute(e_cx)):
-            e_co = fields["e_cx"]
-            e_cx = fields["e_co"]
-            print("Inverted eco and ecx!")
-            invert_flag=True
+            cr = peak_fields["cr"] # [azmin, elmin, azmax, elmax]
+            d_az = cr[2] - cr[0]
+            d_el = cr[3] - cr[1]
 
-        cr = fields["cr"] # [azmin, elmin, azmax, elmax]
-        d_az = cr[2] - cr[0]
-        d_el = cr[3] - cr[1]
+            if stitch_wide:
+                wide_beam_file = beam_file.replace("v2", "v2_wide") 
+                wd_file = open(opj(beamdir, 
+                    wide_beam_file+"_{}_fields.pkl".format(det)), "rb")
+                wide_fields = pickle.load(wd_file)
+                wd_file.close()
+                e_co_wide = wide_fields["e_co"]
+                e_cx_wide = wide_fields["e_cx"]
+                if invert_flag:
+                    e_co_wide = wide_fields["e_cx"]
+                    e_cx_wide = wide_fields["e_co"]
 
-        if stitch_wide:
-            e_co_wide = fields["e_co_sl"]
-            e_cx_wide = fields["e_cx_sl"]
-            if invert_flag:
-                e_co_wide = fields["e_cx_sl"]
-                e_cx_wide = fields["e_co_sl"]
+                cr_wide = wide_fields["cr_sl"] # [azmin, elmin, azmax, elmax]
+                d_az_wide = cr_wide[2] - cr_wide[0]
+                d_el_wide = cr_wide[3] - cr_wide[1]
 
-            cr_wide = fields["cr_sl"] # [azmin, elmin, azmax, elmax]
-            d_az_wide = cr_wide[2] - cr_wide[0]
-            d_el_wide = cr_wide[3] - cr_wide[1]
+            else:
+                e_co_wide = None
+                e_cx_wide = None
+                d_az_wide = None
+                d_el_wide = None
 
-        else:
-            e_co_wide = None
-            e_cx_wide = None
-            d_az_wide = None
-            d_el_wide = None
-
-        stokes = tools.e2iqu(e_co, e_cx, d_az, d_el, vpol=False,
-            basis="grasp",
-            nside_out=nside_blm,
-            e_co_wide=e_co_wide,
-            e_cross_wide=e_cx_wide,
-            delta_az_wide=d_az_wide,
-            delta_el_wide=d_el_wide,
-            apodize=apodize)
-        if plot:
-            maxI = 10*np.log10(np.amax(stokes[0]))
-            maxQ = np.amax(stokes[1])
-            maxU = np.amax(stokes[2])
-            hp.orthview(10*np.log10(stokes[0]), rot=[0,90,0], half_sky=True,
+            stokes = tools.e2iqu(e_co, e_cx, d_az, d_el, vpol=False,
+                basis="grasp",
+                nside_out=nside_blm,
+                e_co_wide=e_co_wide,
+                e_cross_wide=e_cx_wide,
+                delta_az_wide=d_az_wide,
+                delta_el_wide=d_el_wide,
+                apodize=apodize)
+            if plot:
+                maxI = 10*np.log10(np.amax(stokes[0]))
+                maxQ = np.amax(stokes[1])
+                maxU = np.amax(stokes[2])
+                hp.orthview(10*np.log10(stokes[0]), rot=[0,90,0], half_sky=True,
                        max=maxI, min=maxI-80.)
-            plt.savefig(opj(beamdir, beam_file+"_I.png") ,dpi=1000)
-            hp.orthview(stokes[1], rot=[0,90,0], half_sky=True)
-            plt.savefig(opj(beamdir, beam_file+"_Q.png") ,dpi=1000)
-            hp.orthview(stokes[2], rot=[0,90,0], half_sky=True)
-            plt.savefig(opj(beamdir, beam_file+"_U.png") ,dpi=1000)
-            hp.write_map(opj(beamdir, beam_file+"_Stokes.fits"), stokes)
+                plt.savefig(opj(beamdir, beam_file+"_I.png") ,dpi=1000)
+                hp.orthview(stokes[1], rot=[0,90,0], half_sky=True)
+                plt.savefig(opj(beamdir, beam_file+"_Q.png") ,dpi=1000)
+                hp.orthview(stokes[2], rot=[0,90,0], half_sky=True)
+                plt.savefig(opj(beamdir, beam_file+"_U.png") ,dpi=1000)
+                hp.write_map(opj(beamdir, beam_file+"_Stokes.fits"), stokes)
 
-        blm_stokes = hp.map2alm(stokes, lmax_big, pol=False)
-        blm_stokes = beam_tools.trunc_alm(blm_stokes, lmax_new=lmax)
-        blmm2, blmp2 = beam_tools.get_pol_beam(blm_stokes[1], blm_stokes[2])
-        blm  = blm_stokes[0]
-        blm = np.array([blm, blmm2, blmp2], dtype=np.complex128)
+            blm_stokes = hp.map2alm(stokes, lmax_big, pol=False)
+            blm_stokes = beam_tools.trunc_alm(blm_stokes, lmax_new=lmax)
+            blmm2, blmp2 = beam_tools.get_pol_beam(blm_stokes[1], blm_stokes[2])
+            blm  = blm_stokes[0]
+            blm = np.array([blm, blmm2, blmp2], dtype=np.complex128)
 
-        # save npy file
-        po_file = opj(beamdir, beam_file+".npy")
-        np.save(po_file, blm)
+            # save npy file
+            po_file = opj(beamdir, beam_file+".npy")
+            np.save(po_file, blm)
 
         # set common opts
         #fwhm = prop["fwhm"] * 60 # arcmin
-        az_off = fields["az_off"]
-        el_off = fields["el_off"]
+        az_off = prop["cx"]
+        el_off = prop["cy"]
         beam_opts = dict(lmax=lmax, deconv_q=True, normalize=True,
                          po_file=po_file, cross_pol=True, btype="PO",
                          az=az_off, el=el_off)#fwhm=fwhm)
