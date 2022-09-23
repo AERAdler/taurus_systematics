@@ -362,7 +362,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
             pk_file = open(opj(beamdir, beam_file+"_{}_fields.pkl".format(det)
                               ), "rb")
             peak_fields = pickle.load(pk_file)
-            pkl_file.close()
+            pk_file.close()
             prop_file = open(opj(beamdir, beam_file+"_"+det+"_prop.pkl"), "rb")
             prop = pickle.load(prop_file)
             prop_file.close()
@@ -430,7 +430,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
             blm = np.array([blm, blmm2, blmp2], dtype=np.complex128)
 
             # save npy file
-            po_file = opj(beamdir, beam_file+".npy")
+            po_file = opj(beamdir, beam_file+"_{}.npy".format(det))
             np.save(po_file, blm)
 
         # set common opts
