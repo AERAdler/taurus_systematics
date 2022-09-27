@@ -392,7 +392,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
                     e_co_wide = wide_fields["e_cx"]
                     e_cx_wide = wide_fields["e_co"]
 
-                cr_wide = wide_fields["cr_sl"] # [azmin, elmin, azmax, elmax]
+                cr_wide = wide_fields["cr"] # [azmin, elmin, azmax, elmax]
                 d_az_wide = cr_wide[2] - cr_wide[0]
                 d_el_wide = cr_wide[3] - cr_wide[1]
 
