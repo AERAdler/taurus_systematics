@@ -13,6 +13,7 @@ import pickle
 import time
 import datetime
 import os 
+import ephem
 opj = os.path.join
 plt.switch_backend("agg")
 from mpi4py import MPI
@@ -20,6 +21,31 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 from ground_tools import template_from_position
+from . import transfer_matrix as tm
+
+def hwp_band(center_nu):
+    saph_w = 300./(2.0*0.317*center_nu)
+    ratio = saph_width/3.75#Rescale AR thickness from the 95/150 AHWP band
+
+    #Thickness
+    thicks = [0.5*ratio, 0.31*ratio, 0.257*ratio, saph_w, saph_w, saph_w, 
+              saph_w, saph_w, 0.257*ratio, 0.31*ratio, 0.5*ratio]
+    #Indices: five saph layers sandwiched between 3 AR layers
+    idxs = np.zeros((9,2))
+    idxs[0] = [1.268,1.268]
+    idxs[1] = [1.979, 1.979]
+    idxs[2] = [2.855, 2.855]
+    idxs[3:8] = [3.019, 3.336]
+    idxs[8] = idxs[2]
+    idxs[9] = idxs[1]
+    idxs[10] = idxs[0]
+    #Losses: dielectric constant along two axes
+    losses = np.ones((9,2))*1.2e-3
+    losses[3:8] = [2.3e-4, 1.25e-4]
+    #Angles: rotation of the saph layers for birefringence
+    angles = np.array([0.,0.,0., 0.,26.5,94.8,28.1,-2.6 ,0.,0.,0.])*np.pi/180.0
+
+    return [thicks, idxs, losses, angles]
 
 def get_default_spice_opts(lmax=700, fsky=None):
 
@@ -39,10 +65,13 @@ def get_default_spice_opts(lmax=700, fsky=None):
 
     return spice_opts
 
+def djd_to_unix_t(djd):
+    return int((djd-25567.5)*86400)
+
 def autoscale_y(ax, margin=0.1):
     '''
-    This function rescales the y-axis based on the data that is visible given the
-    current xlim of the axis.
+    This function rescales the y-axis based on the data that is visible given 
+    the current xlim of the axis.
     ax : a matplotlib axes object
     margin : the fraction of the total height of the y-data to pad
     the upper and lower ylims
@@ -181,27 +210,45 @@ def run_sim(simname, sky_alm,
         (default: False)
     comm : MPI communicator
     """
-    np.random.seed(seed)
 
+    np.random.seed(seed)
     ndays = int(mlen/(24*60*60))
     track = np.loadtxt(opj(basedir, balloon_track))
     co_added_maps = np.zeros((3,hp.nside2npix(nside_out)))
     co_added_cond = np.zeros(hp.nside2npix(nside_out))
     co_added_hits = np.zeros((hp.nside2npix(nside_out)))
-    days_visited = np.zeros(hp.nside2npix(nside_out))
-    for day in range(ndays):
-        print("{:d}GHz, day {:d}".format(int(freq), day))
-        ctime0 = t0+day*24*60*60
+    nights_visited = np.zeros(hp.nside2npix(nside_out))
+    ctime0 = t0
+    night_idx = 0
+    while ctime0<t0+mlen:
+        print("{:d}GHz, night {:d}".format(int(freq), night_idx))
         track_idx = np.argmin(np.absolute(track[:,0]-ctime0))
         lat = track[track_idx,1]
         lon = track[track_idx,2]
         if rank==0:
             print(track[track_idx,0],lat, lon)
         h = 35000+200*np.random.normal()
-        ymd = datetime.date.fromtimestamp(ctime0).strftime("%Y%m%d")
 
-        scan = ScanStrategy(24*60*60, sample_rate=sample_rate, 
-                            lat=lat, lon=lon, ctime0=ctime0)
+        ymd = datetime.date.fromtimestamp(ctime0).strftime("%Y%m%d")
+        #PyEphem calculation of sunset and sunrise
+        obs_lon = ephem.degrees(np.radians(lon))
+        obs_lat = ephem.degrees(np.radians(lat))
+        obs_utc_time  = datetime.utcfromtimestamp(ctime0)
+        sun = ephem.Sun()
+        gondola = ephem.Observer(lon=obs_lon, lat=obs_lat, elevation=h, 
+                                 date=obs_utc_time)
+        gondola.horizon(-6.)
+        next_set = djd_to_unix_t(gondola.next_setting(sun))
+        next_rise = djd_to_unix_t(gondola.next_rising(sun))
+        #Key assumption: we reach float altitude at daytime. So the first 
+        #night might be lost by the following two lines
+        if next_rise<next_set:#i.e. we are at night
+            ctime0 = next_rise + 60
+            continue
+
+        scan_duration = next_rise - next_set
+        scan = ScanStrategy(scan_duration, sample_rate=sample_rate, 
+                            lat=lat, lon=lon, ctime0=next_set)
         #reverse scan direction every day
         scan_opts = dict(scan_speed=30.*int(2*(day%2-.5)), 
                          use_strictly_az=True,
@@ -229,7 +276,17 @@ def run_sim(simname, sky_alm,
                                   sensitive_freq=freq, file_names=beam_files)
 
 
-        if hwp_model != "HWP_only":
+        if hwp_model == "HWP_only":
+            continue
+        elif hwp_model == "band":
+            center_nu = 185.
+            stack = hwp_band(center_nu)
+            for beami in scan.beams:
+                beami[0].set_hwp_mueller(thicknesses=stack[0], indices=stack[1],
+                    losses=stack[2], angles=stack[3])
+                beami[1].set_hwp_mueller(thicknesses=stack[0], indices=stack[1],
+                    losses=stack[2], angles=stack[3]) 
+        else:
             for beami in scan.beams:
                 beami[0].set_hwp_mueller(model_name=hwp_model)
                 beami[1].set_hwp_mueller(model_name=hwp_model) 
@@ -268,23 +325,26 @@ def run_sim(simname, sky_alm,
         else:
             scan.scan_instrument_mpi(sky_alm, **scan_opts)
 
+        ctime0 = next_rise+60
+
         maps, cond, proj = scan.solve_for_map(return_proj=True)
         if scan.mpi_rank == 0:
             hp.write_map(opj(basedir, outdir,
-                 "maps_"+simname+"_{}.fits".format(ymd)), maps)
+                 "maps_"+simname+"_{}.fits".format(night_idx)), maps)
             hp.write_map(opj(basedir, outdir, 
-                "cond_"+simname+"_{}.fits".format(ymd)), cond)
+                "cond_"+simname+"_{}.fits".format(night_idx)), cond)
             hp.write_map(opj(basedir, outdir, 
-                "hits_"+simname+"_{}.fits".format(ymd)), proj[0])
+                "hits_"+simname+"_{}.fits".format(night_idx)), proj[0])
             co_added_maps[:, maps[0]!=hp.UNSEEN] += maps[:, maps[0]!=hp.UNSEEN]
             co_added_hits += proj[0]
             co_added_cond[maps[0]!=hp.UNSEEN] = np.minimum(
                 cond[maps[0]!=hp.UNSEEN], co_added_cond[maps[0]!=hp.UNSEEN])
-            days_visited[maps[0]!=hp.UNSEEN] += 1
+            nights_visited[maps[0]!=hp.UNSEEN] += 1
+            night_idx +=1
     
     if scan.mpi_rank==0:
 
-        co_added_maps[:,days_visited!=0] /= days_visited[days_visited!=0]
+        co_added_maps[:,nights_visited!=0] /= nights_visited[nights_visited!=0]
         hp.write_map(opj(basedir, outdir, "maps_"+simname+"_coadd.fits"),
                  co_added_maps)
         hp.write_map(opj(basedir, outdir, "hits_"+simname+"_coadd.fits"),
@@ -527,7 +587,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     #Rectangular mask
     mask = np.ones(12*nside_out**2)
     theta, phi = hp.pix2ang(nside_out, np.arange(12*nside_out**2))
-    max_dec = np.radians(220.)
+    max_dec = np.radians(20.)
     min_dec = np.radians(-80.)
     dec_centre = .5*np.pi - .5*(max_dec+min_dec)
     dec_hwidth = .5*(max_dec-min_dec)
