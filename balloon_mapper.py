@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import pickle
 import time
-import datetime
+from datetime import date, datetime
 import os 
 import ephem
 opj = os.path.join
@@ -21,17 +21,18 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 from ground_tools import template_from_position
-from . import transfer_matrix as tm
+import transfer_matrix as tm
 
 def hwp_band(center_nu):
     saph_w = 300./(2.0*0.317*center_nu)
-    ratio = saph_width/3.75#Rescale AR thickness from the 95/150 AHWP band
+    ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
 
     #Thickness
-    thicks = [0.5*ratio, 0.31*ratio, 0.257*ratio, saph_w, saph_w, saph_w, 
-              saph_w, saph_w, 0.257*ratio, 0.31*ratio, 0.5*ratio]
+    thicks = np.array([0.5*ratio, 0.31*ratio, 0.257*ratio, 
+                       saph_w, saph_w, saph_w, saph_w, saph_w,
+                       0.257*ratio, 0.31*ratio, 0.5*ratio])
     #Indices: five saph layers sandwiched between 3 AR layers
-    idxs = np.zeros((9,2))
+    idxs = np.zeros((11,2))
     idxs[0] = [1.268,1.268]
     idxs[1] = [1.979, 1.979]
     idxs[2] = [2.855, 2.855]
@@ -40,7 +41,7 @@ def hwp_band(center_nu):
     idxs[9] = idxs[1]
     idxs[10] = idxs[0]
     #Losses: dielectric constant along two axes
-    losses = np.ones((9,2))*1.2e-3
+    losses = np.ones((11,2))*1.2e-3
     losses[3:8] = [2.3e-4, 1.25e-4]
     #Angles: rotation of the saph layers for birefringence
     angles = np.array([0.,0.,0., 0.,26.5,94.8,28.1,-2.6 ,0.,0.,0.])*np.pi/180.0
@@ -106,7 +107,7 @@ def run_sim(simname, sky_alm,
             lmax=1000, mmax=4, pol_only=False, no_pol=False, add_ghosts=False, 
             ghost_amp=0.01, scan_type="atacama", el0=35., az0=0., freq=150., 
             ground = None, filter_highpass=False, w_c=None, filter_m=1,
-            hwp_mode=None, hwp_model="HWP_only", load_mueller=False, varphi=0.0, 
+            hwp_mode=None, hwp_model="ideal", load_mueller=False, varphi=0.0, 
             hfreq=1.0, hstepf=1/(12.*60*60), filter_4fhwp=False, nside_spin=1024, 
             nside_out=512, verbose=1, balloon_track = None, killfrac=0., 
             seed=25, preview_pointing=False, comm=None, **kwargs):
@@ -183,7 +184,7 @@ def run_sim(simname, sky_alm,
     hwp_mode : string
         Type of HWP motion (None, stepped, continuous)
     hwp_model : string
-        Pre-included HWP model selected (default: HWP_only)
+        Pre-included HWP model selected (default: ideal)
     varphi : float
         HWP angle correction to apply due to multi-layer phase offset 
         (default: 0.0)
@@ -221,7 +222,6 @@ def run_sim(simname, sky_alm,
     ctime0 = t0
     night_idx = 0
     while ctime0<t0+mlen:
-        print("{:d}GHz, night {:d}".format(int(freq), night_idx))
         track_idx = np.argmin(np.absolute(track[:,0]-ctime0))
         lat = track[track_idx,1]
         lon = track[track_idx,2]
@@ -229,15 +229,15 @@ def run_sim(simname, sky_alm,
             print(track[track_idx,0],lat, lon)
         h = 35000+200*np.random.normal()
 
-        ymd = datetime.date.fromtimestamp(ctime0).strftime("%Y%m%d")
+        ymd = date.fromtimestamp(ctime0).strftime("%Y%m%d")
         #PyEphem calculation of sunset and sunrise
-        obs_lon = ephem.degrees(np.radians(lon))
-        obs_lat = ephem.degrees(np.radians(lat))
-        obs_utc_time  = datetime.utcfromtimestamp(ctime0)
         sun = ephem.Sun()
-        gondola = ephem.Observer(lon=obs_lon, lat=obs_lat, elevation=h, 
-                                 date=obs_utc_time)
-        gondola.horizon(-6.)
+        gondola = ephem.Observer()
+        gondola.lon = ephem.degrees(np.radians(lon))
+        gondola.lat = ephem.degrees(np.radians(lat))
+        gondola.date = datetime.utcfromtimestamp(ctime0)
+        gondola.elevation = h
+        gondola.horizon = np.radians(-6.)
         next_set = djd_to_unix_t(gondola.next_setting(sun))
         next_rise = djd_to_unix_t(gondola.next_rising(sun))
         #Key assumption: we reach float altitude at daytime. So the first 
@@ -245,12 +245,14 @@ def run_sim(simname, sky_alm,
         if next_rise<next_set:#i.e. we are at night
             ctime0 = next_rise + 60
             continue
-
         scan_duration = next_rise - next_set
+        if rank==0:
+            print("{:d}GHz, night {:d}, ctime0 {:d}, duration: {:.2f}h".format(
+                      int(freq), night_idx, ctime0, scan_duration/3600.))
         scan = ScanStrategy(scan_duration, sample_rate=sample_rate, 
                             lat=lat, lon=lon, ctime0=next_set)
-        #reverse scan direction every day
-        scan_opts = dict(scan_speed=30.*int(2*(day%2-.5)), 
+        #reverse scan direction every night
+        scan_opts = dict(scan_speed=30.*int(2*(night_idx%2-.5)), 
                          use_strictly_az=True,
                          q_bore_func=scan.strictly_az, 
                          ctime_kwargs=dict(),
@@ -276,8 +278,8 @@ def run_sim(simname, sky_alm,
                                   sensitive_freq=freq, file_names=beam_files)
 
 
-        if hwp_model == "HWP_only":
-            continue
+        if hwp_model == "ideal":
+            pass
         elif hwp_model == "band":
             center_nu = 185.
             stack = hwp_band(center_nu)
@@ -324,17 +326,15 @@ def run_sim(simname, sky_alm,
         
         else:
             scan.scan_instrument_mpi(sky_alm, **scan_opts)
-
         ctime0 = next_rise+60
-
         maps, cond, proj = scan.solve_for_map(return_proj=True)
         if scan.mpi_rank == 0:
             hp.write_map(opj(basedir, outdir,
-                 "maps_"+simname+"_{}.fits".format(night_idx)), maps)
+                 "maps_"+simname+"_{:02d}.fits".format(night_idx)), maps)
             hp.write_map(opj(basedir, outdir, 
-                "cond_"+simname+"_{}.fits".format(night_idx)), cond)
+                "cond_"+simname+"_{:02d}.fits".format(night_idx)), cond)
             hp.write_map(opj(basedir, outdir, 
-                "hits_"+simname+"_{}.fits".format(night_idx)), proj[0])
+                "hits_"+simname+"_{:02d}.fits".format(night_idx)), proj[0])
             co_added_maps[:, maps[0]!=hp.UNSEEN] += maps[:, maps[0]!=hp.UNSEEN]
             co_added_hits += proj[0]
             co_added_cond[maps[0]!=hp.UNSEEN] = np.minimum(
@@ -806,7 +806,7 @@ def main():
  
     #Beamconv timing
     parser.add_argument("--t0", action="store", dest="t0",
-        default=1546300800, type=float)
+        default=1427376366, type=float)
     parser.add_argument("--days", action="store", dest="days",
         default=1, type=int)
     parser.add_argument("--sample_rate", action="store", dest="sample_rate",
