@@ -101,16 +101,16 @@ def autoscale_y(ax, margin=0.1):
 def run_sim(simname, sky_alm,
             basedir = opj("/","mn", "stornext", "u3", "aeadler", "ssn"),
             beamdir = "beams", outdir = opj("output", "maps"),
-            mlen= 24*60*60,  sample_rate = 119.1, t0 = 1546300800, 
+            mlen=24*60*60,  sample_rate=119.1, t0=1546300800, 
             npairs=None, create_fpu=False, fov=2.0, beam_files=None,
             no_pairs=False, btype="Gaussian", fwhm=43., deconv_q=True, 
             lmax=1000, mmax=4, pol_only=False, no_pol=False, add_ghosts=False, 
-            ghost_amp=0.01, scan_type="atacama", el0=35., az0=0., freq=150., 
+            ghost_amp=0.01, el0=35., az0=0., sun_angle=6., freq=150., 
             ground = None, filter_highpass=False, w_c=None, filter_m=1,
             hwp_mode=None, hwp_model="ideal", load_mueller=False, varphi=0.0, 
-            hfreq=1.0, hstepf=1/(12.*60*60), filter_4fhwp=False, nside_spin=1024, 
-            nside_out=512, verbose=1, balloon_track = None, killfrac=0., 
-            seed=25, preview_pointing=False, comm=None, **kwargs):
+            hfreq=1.0, hstepf=1/(12.*60*60), filter_4fhwp=False, 
+            nside_spin=1024, nside_out=512, balloon_track = None, killfrac=0., 
+            seed=25, preview_pointing=False, comm=None, verbose=1, **kwargs):
     """
     Run beamconv simulations, either ground-based or balloon-borne. 
     Creates maps.
@@ -170,6 +170,8 @@ def run_sim(simname, sky_alm,
         Boresight starting elevation in degrees (default: 35.)
     az0 : float
         Boresight starting azimuth in degrees (default: 0.)
+    sun_angle : float
+        How far under the horizon the sun needs to be in degrees (default : 6.)
     freq : float
         Detector frequency, in Hz (default: 1.0e11)
     ground_alm : array-like
@@ -199,8 +201,6 @@ def run_sim(simname, sky_alm,
         Healpix NSIDE of spin maps (default: 1024)
     nside_out : int
         Healpix NSIDE of resulting sky map (default: 512)
-    verbose : int
-        How much to print while running beamconv (default: 1)
     balloon_track : string
         Path to file with balloon position over time (default: None)
     killfrac : float
@@ -210,6 +210,8 @@ def run_sim(simname, sky_alm,
     preview_pointing : bool
         (default: False)
     comm : MPI communicator
+    verbose : int
+        How much to print while running beamconv (default: 1)
     """
 
     np.random.seed(seed)
@@ -237,7 +239,7 @@ def run_sim(simname, sky_alm,
         gondola.lat = ephem.degrees(np.radians(lat))
         gondola.date = datetime.utcfromtimestamp(ctime0)
         gondola.elevation = h
-        gondola.horizon = np.radians(-6.)
+        gondola.horizon = np.radians(-sun_angle)
         next_set = djd_to_unix_t(gondola.next_setting(sun))
         next_rise = djd_to_unix_t(gondola.next_rising(sun))
         #Key assumption: we reach float altitude at daytime. So the first 
@@ -270,8 +272,8 @@ def run_sim(simname, sky_alm,
             nfloor = int(np.floor(np.sqrt(npairs)))
             if btype=="PO":
                 beam_opts["po_file"] = beam_files#It"s just one file here
-            scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov,
-                    **beam_opts)
+            scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov, 
+                                    ab_diff=45., **beam_opts)
 
         else:
             scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
@@ -803,6 +805,8 @@ def main():
         default=50., help="Starting elevation (ballon scan)")
     parser.add_argument("--az0", action="store", dest="az0", type=float,
         default=0., help="Starting azimuth, balloon scan")
+    parser.add_argument("--sun_angle", action="store", dest="sun_angle", 
+        type=float, default=6., help="Sun at least x degrees under horizon")
  
     #Beamconv timing
     parser.add_argument("--t0", action="store", dest="t0",
@@ -921,44 +925,43 @@ def main():
                         basedir = basedir,
                         beamdir = beamdir,
                         outdir = outdir,
-
-                        mlen= args.days*24*60*60,  
+                        mlen= args.days*24*60*60,
+                        sample_rate=args.sample_rate,
                         t0 = args.t0,
-
-                        btype = args.btype,
+                        npairs=npairs,
                         create_fpu=args.create_fpu,
+                        fov=args.fov,
                         beam_files = beam_files,
                         no_pairs=args.no_pairs,
-                        npairs=npairs,
-                        fov=args.fov,
-                        killfrac=args.killfrac,
-                        seed=args.seed,
-                        preview_pointing=False,#args.preview_pointing,
-                        add_ghosts=args.add_ghosts,
-                        ghost_amp=args.ghost_amp,
-                        fwhm=args.fwhm, 
+                        btype = args.btype,
+                        fwhm=args.fwhm,
+                        deconv_q = args.deconv_q,
                         lmax=args.lmax,
                         mmax=args.mmax,
-                        deconv_q = args.deconv_q,
-                        ground = args.ground, 
-                        filter_highpass = args.filter_highpass,  
-                        w_c = args.w_c,
-                        filter_m = args.filter_m,                     
-                        balloon_track = args.balloon_track,
+                        add_ghosts=args.add_ghosts,
+                        ghost_amp=args.ghost_amp,
                         el0 = args.el0,
                         az0 = args.az0,
-                        verbose=args.verbose,
-                        nside_spin=args.nside_spin,
-                        nside_out=args.nside_out,
-                        sample_rate=args.sample_rate,
-                        freq=args.freq,
+                        sun_angle = args.sun_angle,
+                        ground = args.ground, 
+                        filter_highpass = args.filter_highpass,
+                        w_c = args.w_c,
+                        filter_m = args.filter_m,
                         hwp_mode=args.hwp_mode,
                         hwp_model=args.hwp_model,
                         varphi=args.varphi,
                         filter_4fhwp=args.filter_4fhwp,
                         hfreq=args.hfreq,
                         hstepf=args.hstepf,
-                        comm=comm)
+                        nside_spin=args.nside_spin,
+                        nside_out=args.nside_out,
+                        balloon_track = args.balloon_track,
+                        killfrac=args.killfrac,
+                        seed=args.seed,
+                        preview_pointing=False,
+                        freq=args.freq,
+                        comm=comm,
+                        verbose=args.verbose)
         
 
         run_sim(args.sim_tag, sky_alm, **run_opts)
