@@ -23,7 +23,7 @@ size = comm.Get_size()
 from ground_tools import template_from_position
 import transfer_matrix as tm
 
-def hwp_band(center_nu):
+def hwp_band5(center_nu):
     saph_w = 300./(2.0*0.317*center_nu)
     ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
 
@@ -45,6 +45,55 @@ def hwp_band(center_nu):
     losses[3:8] = [2.3e-4, 1.25e-4]
     #Angles: rotation of the saph layers for birefringence
     angles = np.array([0.,0.,0., 0.,26.5,94.8,28.1,-2.6 ,0.,0.,0.])*np.pi/180.0
+
+    return [thicks, idxs, losses, angles]
+
+def hwp_band3(center_nu): 
+    saph_w = 300./(2.0*0.317*center_nu)
+    ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
+
+    #Thickness
+    thicks = np.array([0.5*ratio, 0.31*ratio, 0.257*ratio, 
+                        saph_w, saph_w, saph_w,
+                       0.257*ratio, 0.31*ratio, 0.5*ratio])
+    #Indices: five saph layers sandwiched between 3 AR layers
+    idxs = np.zeros((9,2))
+    idxs[0] = [1.268,1.268]
+    idxs[1] = [1.979, 1.979]
+    idxs[2] = [2.855, 2.855]
+    idxs[3:6] = [3.019, 3.336]
+    idxs[6] = idxs[2]
+    idxs[7] = idxs[1]
+    idxs[8] = idxs[0]
+    #Losses: dielectric constant along two axes
+    losses = np.ones((9,2))*1.2e-3
+    losses[3:6] = [2.3e-4, 1.25e-4]
+    #Angles: rotation of the saph layers for birefringence
+    angles = np.array([0.,0.,0., 0.,54.0, 0., 0.,0.,0.])*np.pi/180.0
+
+    return [thicks, idxs, losses, angles]
+
+def hwp_band(center_nu):
+    saph_w = 300./(2.0*0.317*center_nu)
+    ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
+
+    #Thickness
+    thicks = np.array([0.5*ratio, 0.31*ratio, 0.257*ratio, saph_w,
+                               0.257*ratio, 0.31*ratio, 0.5*ratio])
+    #Indices: five saph layers sandwiched between 3 AR layers
+    idxs = np.zeros((7,2))
+    idxs[0] = [1.268,1.268]
+    idxs[1] = [1.979, 1.979]
+    idxs[2] = [2.855, 2.855]
+    idxs[3] = [3.019, 3.336]
+    idxs[4] = idxs[2]
+    idxs[5] = idxs[1]
+    idxs[6] = idxs[0]
+    #Losses: dielectric constant along two axes
+    losses = np.ones((11,2))*1.2e-3
+    losses[3] = [2.3e-4, 1.25e-4]
+    #Angles: rotation of the saph layers for birefringence
+    angles = np.zeros(7)
 
     return [thicks, idxs, losses, angles]
 
@@ -282,9 +331,14 @@ def run_sim(simname, sky_alm,
 
         if hwp_model == "ideal":
             pass
-        elif hwp_model == "band":
+        elif "band" in hwp_model:
             center_nu = 185.
-            stack = hwp_band(center_nu)
+            if hwp_model=="band5":
+                stack = hwp_band5(center_nu)
+            elif hwp_model=="band3":
+                stack = hwp_band3(center_nu)
+            else:
+                stack = hwp_band(center_nu)
             for beami in scan.beams:
                 beami[0].set_hwp_mueller(thicknesses=stack[0], indices=stack[1],
                     losses=stack[2], angles=stack[3])
