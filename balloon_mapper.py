@@ -44,7 +44,7 @@ def hwp_band5(center_nu):
     losses = np.ones((11,2))*1.2e-3
     losses[3:8] = [2.3e-4, 1.25e-4]
     #Angles: rotation of the saph layers for birefringence
-    angles = np.array([0.,0.,0., 0.,26.5,94.8,28.1,-2.6 ,0.,0.,0.])*np.pi/180.0
+    angles = np.array([0.,0.,0., 22.9,-50.,0.,50.,22.9 ,0.,0.,0.])*np.pi/180.0
 
     return [thicks, idxs, losses, angles]
 
@@ -90,7 +90,7 @@ def hwp_band(center_nu):
     idxs[5] = idxs[1]
     idxs[6] = idxs[0]
     #Losses: dielectric constant along two axes
-    losses = np.ones((11,2))*1.2e-3
+    losses = np.ones((7,2))*1.2e-3
     losses[3] = [2.3e-4, 1.25e-4]
     #Angles: rotation of the saph layers for birefringence
     angles = np.zeros(7)
