@@ -24,7 +24,7 @@ from ground_tools import template_from_position
 import transfer_matrix as tm
 
 def hwp_band5(center_nu):
-    saph_w = 300./(2.0*0.317*center_nu)
+    saph_w = 300./(2.0*0.317*center_nu)*tm.mm
     ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
 
     #Thickness
@@ -49,7 +49,7 @@ def hwp_band5(center_nu):
     return [thicks, idxs, losses, angles]
 
 def hwp_band3(center_nu): 
-    saph_w = 300./(2.0*0.317*center_nu)
+    saph_w = 300./(2.0*0.317*center_nu)*tm.mm
     ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
 
     #Thickness
@@ -74,7 +74,7 @@ def hwp_band3(center_nu):
     return [thicks, idxs, losses, angles]
 
 def hwp_band(center_nu):
-    saph_w = 300./(2.0*0.317*center_nu)
+    saph_w = 300./(2.0*0.317*center_nu)*tm.mm
     ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
 
     #Thickness
@@ -348,6 +348,7 @@ def run_sim(simname, sky_alm,
             for beami in scan.beams:
                 beami[0].set_hwp_mueller(model_name=hwp_model)
                 beami[1].set_hwp_mueller(model_name=hwp_model) 
+            
         scan.partition_mission(chunksize=int(sample_rate*3600))
         scan.allocate_maps(nside=512)
         
@@ -407,6 +408,7 @@ def run_sim(simname, sky_alm,
                  co_added_hits)
         hp.write_map(opj(basedir, outdir, "cond_"+simname+"_coadd.fits"),
                  co_added_cond)
+        
     return
 
 def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000, 
@@ -648,6 +650,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     dec_centre = .5*np.pi - .5*(max_dec+min_dec)
     dec_hwidth = .5*(max_dec-min_dec)
     mask[np.abs(theta-dec_centre)>dec_hwidth]=0.
+    mask[maps[0]==hp.UNSEEN]=0.
     fsky = np.sum(mask)/(12*nside_out**2)
     spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
 
@@ -1029,7 +1032,7 @@ def main():
             calibrate = args.calibrate, 
             mask_file = args.mask,
             nside_out = args.nside_out, 
-            lmax = 600,
+            lmax = 400,
             fwhm = args.fwhm, 
             l1 = 100, 
             l2 = 300,
