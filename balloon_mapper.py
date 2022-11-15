@@ -24,7 +24,7 @@ from ground_tools import template_from_position
 import transfer_matrix as tm
 
 def hwp_band5(center_nu):
-    saph_w = 300./(2.0*0.317*center_nu)*tm.mm
+    saph_w = 300./(2.0*0.317*center_nu)
     ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
 
     #Thickness
@@ -44,12 +44,12 @@ def hwp_band5(center_nu):
     losses = np.ones((11,2))*1.2e-3
     losses[3:8] = [2.3e-4, 1.25e-4]
     #Angles: rotation of the saph layers for birefringence
-    angles = np.array([0.,0.,0., 22.9,-50.,0.,50.,22.9 ,0.,0.,0.])*np.pi/180.0
+    angles = np.array([0.,0.,0., 22.9,-50.,0.,50.,-22.9 ,0.,0.,0.])*np.pi/180.0
 
     return [thicks, idxs, losses, angles]
 
 def hwp_band3(center_nu): 
-    saph_w = 300./(2.0*0.317*center_nu)*tm.mm
+    saph_w = 300./(2.0*0.317*center_nu)
     ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
 
     #Thickness
@@ -74,7 +74,7 @@ def hwp_band3(center_nu):
     return [thicks, idxs, losses, angles]
 
 def hwp_band(center_nu):
-    saph_w = 300./(2.0*0.317*center_nu)*tm.mm
+    saph_w = 300./(2.0*0.317*center_nu)
     ratio = saph_w/3.75#Rescale AR thickness from the 95/150 AHWP band
 
     #Thickness
