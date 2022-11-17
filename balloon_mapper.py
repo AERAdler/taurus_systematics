@@ -680,13 +680,17 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             np.save(opj(analyzis_dir, "spectra", 
                    "{}_idealspectra_rect.npy".format(sim_tag)), cl_ideal)
             #Compute Cls for the smoothed map, deconvolve
-            gain_dec = np.average(cl_ideal[0, l1:l2]/cl[0, l1:l2])
+            gain_TT = np.average(cl_ideal[0, l1:l2]/cl[0, l1:l2])
+            gain_EE = np.average(cl_ideal[1, l1:l2]/cl[1, l1:l2])
             print("TT Gain for map {} versus ideal is: {:.3f}".format(sim_tag,
-                  gain_dec))
+                  gain_TT)) 
+            print("EE Gain for map {} versus ideal is: {:.3f}".format(sim_tag,
+                  gain_EE))
         else:
-            gain_dec = 1.
+            gain_TT = 1.
+            gain_EE = 1.
         #Should difference maps be gain_corrected?
-        diff_ideal = maps*np.sqrt(gain_dec) - ideal_maps
+        diff_ideal = maps*np.sqrt(gain_TT) - ideal_maps
         for diffi in diff_ideal:
             diffi[mask[:]==0] = 0.
         diff_ideal_cl = tools.spice(diff_ideal, mask=mask, **spice_opts2use)
@@ -712,11 +716,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             cl_input = cl_input/bl**2
             #Compute Cls for the smoothed map, deconvolve
             gain_TT = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
-            gain_EE = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
+            gain_EE = np.average(cl_input[1, l1:l2]/cl[1, l1:l2])
             print("Gain for map {} versus input is: {:.3f}".format(
-                  sim_tag, gain_dec))
+                  sim_tag, gain_TT))
         else:
             gain_TT= 1.
+            gain_EE= 1.
 
         diff_input = maps*np.sqrt(gain_TT) - input_maps
         for diffi in diff_input:
@@ -735,14 +740,14 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     cmap4maps.set_bad("black", 0.5)
     fstrs = ["TT", "EE", "BB", "TE", "TB", "EB"]
     cmap = plt.get_cmap("tab10")
-    xlmax = 400
+    xlmax = 300
 
     for f in range(6):
         plt.figure(f)
         ell = np.arange(len(cl[f]))
         #Truncate to start in l=4
         ell = ell[5:]
-        plt.plot(ell, ell*(ell+1)/(2*np.pi)*gain_dec*cl[f][5:], label=label)
+        plt.plot(ell, ell*(ell+1)/(2*np.pi)*gain_TT*cl[f][5:], label=label)
         #Plot ideal spectrum
         if ideal_map:
             plt.plot(ell, ell*(ell+1)/(2*np.pi)*cl_ideal[f][5:], label="Ideal", 
