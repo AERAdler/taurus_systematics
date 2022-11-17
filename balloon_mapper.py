@@ -357,7 +357,7 @@ def run_sim(simname, sky_alm,
             hwpf = hstepf
         elif hwp_mode == "continuous":
             hwpf = hfreq   
-        scan.set_hwp_mod(mode=hwp_mode, freq=hwpf)
+        scan.set_hwp_mod(mode=hwp_mode, freq=hwpf, varphi=varphi)
         
         if filter_highpass and (w_c is not None):
             scan.set_filter_dict(w_c, m=filter_m)
@@ -576,7 +576,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
     sat.barrier()
 
 def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
-             calibrate=False, mask_file=None, nside_out=512, lmax=700, 
+             calibrate=None, mask_file=None, nside_out=512, lmax=700, 
              l1=100, l2=300, fwhm=60., plot=False, label=None):
     """
     Function to analyze simulation output 
@@ -596,11 +596,11 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     input_map : string
         Name of an input map the sim_tag map gets 
         differentiated against. (default: None)
-    calibrate : bool
+    calibrate : int
         Whether to recalibrate the scanned map vs ideal and/or input.
-        If True, a gain is computed as the average ratio in the TT spectrum 
-        between the ideal/input map and the sim_tag map. 
-        The sim_tag map is then scaled by sqrt(gain). (default: False)
+        A gain is computed as the average ratio between the ideal/input 
+        spectrum and the sim_tag spectrum. The sim_tag map is scaled by 
+        sqrt(gain). 0 for TT, 1 for EE etc... (default: None)
     mask : string
         Mask file to apply to the maps (default: None)
     nside_out : int
@@ -620,6 +620,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     """
 
     filename = "maps_"+sim_tag+".fits"
+    fstrs = ["TT", "EE", "BB", "TE", "TB", "EB"]
     maps = tools.read_map(opj(analyzis_dir, filename), field=None, fill=np.nan)
     hits = tools.read_map(opj(analyzis_dir, filename.replace("maps_", "hits_")))
     cond = tools.read_map(opj(analyzis_dir, filename.replace("maps_", "cond_")))
@@ -674,23 +675,19 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         for mi in masked_ideal:
             mi[mask[:]==0] = 0.
         #Calibration
+        gain = 1.
         if calibrate:
             cl_ideal = tools.spice(masked_ideal, mask=mask, **spice_opts2use)
             cl_ideal = cl_ideal/bl**2
             np.save(opj(analyzis_dir, "spectra", 
                    "{}_idealspectra_rect.npy".format(sim_tag)), cl_ideal)
             #Compute Cls for the smoothed map, deconvolve
-            gain_TT = np.average(cl_ideal[0, l1:l2]/cl[0, l1:l2])
-            gain_EE = np.average(cl_ideal[1, l1:l2]/cl[1, l1:l2])
-            print("TT Gain for map {} versus ideal is: {:.3f}".format(sim_tag,
-                  gain_TT)) 
-            print("EE Gain for map {} versus ideal is: {:.3f}".format(sim_tag,
-                  gain_EE))
-        else:
-            gain_TT = 1.
-            gain_EE = 1.
+            gain = np.average(cl_ideal[calibrate, l1:l2]/cl[calibrate, l1:l2])
+            print("{} gain for map {} versus ideal is: {:.3f}".format(
+                fstrs[calibrate], sim_tag, gain)) 
+
         #Should difference maps be gain_corrected?
-        diff_ideal = maps*np.sqrt(gain_TT) - ideal_maps
+        diff_ideal = maps*np.sqrt(gain) - ideal_maps
         for diffi in diff_ideal:
             diffi[mask[:]==0] = 0.
         diff_ideal_cl = tools.spice(diff_ideal, mask=mask, **spice_opts2use)
@@ -711,19 +708,16 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         for mi in masked_input:
             mi[~mask] = np.nan
         #Calibration
+        gain = 1.
         if calibrate:
             cl_input= tools.spice(masked_input, mask=mask, **spice_opts2use)
             cl_input = cl_input/bl**2
             #Compute Cls for the smoothed map, deconvolve
-            gain_TT = np.average(cl_input[0, l1:l2]/cl[0, l1:l2])
-            gain_EE = np.average(cl_input[1, l1:l2]/cl[1, l1:l2])
-            print("Gain for map {} versus input is: {:.3f}".format(
-                  sim_tag, gain_TT))
-        else:
-            gain_TT= 1.
-            gain_EE= 1.
+            gain = np.average(cl_input[calibrate, l1:l2]/cl[calibrate, l1:l2])
+            print("{} gain for map {} versus input is: {:.3f}".format(
+                  fstrs[calibrate], sim_tag, gain))
 
-        diff_input = maps*np.sqrt(gain_TT) - input_maps
+        diff_input = maps*np.sqrt(gain) - input_maps
         for diffi in diff_input:
             diffi[~mask] = np.nan
         diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
@@ -738,7 +732,6 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     cmap4maps = cm.RdBu_r
     cmap4maps.set_under("w")
     cmap4maps.set_bad("black", 0.5)
-    fstrs = ["TT", "EE", "BB", "TE", "TB", "EB"]
     cmap = plt.get_cmap("tab10")
     xlmax = 300
 
@@ -747,7 +740,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         ell = np.arange(len(cl[f]))
         #Truncate to start in l=4
         ell = ell[5:]
-        plt.plot(ell, ell*(ell+1)/(2*np.pi)*gain_TT*cl[f][5:], label=label)
+        plt.plot(ell, ell*(ell+1)/(2*np.pi)*gain*cl[f][5:], label=label)
         #Plot ideal spectrum
         if ideal_map:
             plt.plot(ell, ell*(ell+1)/(2*np.pi)*cl_ideal[f][5:], label="Ideal", 
@@ -935,7 +928,7 @@ def main():
 	help="input map for comparaison", dest="input_map") 
     parser.add_argument("--mask", type=str, default=None, action="store",
 	help="Mask for analysis", dest="mask")
-    parser.add_argument("--calibrate", default=False, action="store_true", 
+    parser.add_argument("--calibrate", default=None, action="store", 
         dest="calibrate", help="Calibrate vs ideal or input") 
     parser.add_argument("--plot", default=False, action="store_true", 
         dest="plot", help="Plot spectra") 
