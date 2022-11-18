@@ -576,7 +576,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
     sat.barrier()
 
 def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
-             calibrate=None, mask_file=None, nside_out=512, lmax=700, 
+             cal=None, mask_file=None, nside_out=512, lmax=700, 
              l1=100, l2=300, fwhm=60., plot=False, label=None):
     """
     Function to analyze simulation output 
@@ -596,7 +596,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     input_map : string
         Name of an input map the sim_tag map gets 
         differentiated against. (default: None)
-    calibrate : int
+    cal : int
         Whether to recalibrate the scanned map vs ideal and/or input.
         A gain is computed as the average ratio between the ideal/input 
         spectrum and the sim_tag spectrum. The sim_tag map is scaled by 
@@ -676,15 +676,15 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             mi[mask[:]==0] = 0.
         #Calibration
         gain = 1.
-        if calibrate:
+        if cal is not None:
             cl_ideal = tools.spice(masked_ideal, mask=mask, **spice_opts2use)
             cl_ideal = cl_ideal/bl**2
             np.save(opj(analyzis_dir, "spectra", 
                    "{}_idealspectra_rect.npy".format(sim_tag)), cl_ideal)
             #Compute Cls for the smoothed map, deconvolve
-            gain = np.average(cl_ideal[calibrate, l1:l2]/cl[calibrate, l1:l2])
+            gain = np.average(cl_ideal[cal, l1:l2]/cl[cal, l1:l2])
             print("{} gain for map {} versus ideal is: {:.3f}".format(
-                fstrs[calibrate], sim_tag, gain)) 
+                fstrs[cal], sim_tag, gain)) 
 
         #Should difference maps be gain_corrected?
         diff_ideal = maps*np.sqrt(gain) - ideal_maps
@@ -709,13 +709,13 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             mi[~mask] = np.nan
         #Calibration
         gain = 1.
-        if calibrate:
+        if cal is not None:
             cl_input= tools.spice(masked_input, mask=mask, **spice_opts2use)
             cl_input = cl_input/bl**2
             #Compute Cls for the smoothed map, deconvolve
-            gain = np.average(cl_input[calibrate, l1:l2]/cl[calibrate, l1:l2])
+            gain = np.average(cl_input[cal, l1:l2]/cl[cal, l1:l2])
             print("{} gain for map {} versus input is: {:.3f}".format(
-                  fstrs[calibrate], sim_tag, gain))
+                  fstrs[cal], sim_tag, gain))
 
         diff_input = maps*np.sqrt(gain) - input_maps
         for diffi in diff_input:
@@ -928,7 +928,7 @@ def main():
 	help="input map for comparaison", dest="input_map") 
     parser.add_argument("--mask", type=str, default=None, action="store",
 	help="Mask for analysis", dest="mask")
-    parser.add_argument("--calibrate", default=None, action="store", 
+    parser.add_argument("--calibrate", type=int, default=None, action="store", 
         dest="calibrate", help="Calibrate vs ideal or input") 
     parser.add_argument("--plot", default=False, action="store_true", 
         dest="plot", help="Plot spectra") 
@@ -1027,7 +1027,7 @@ def main():
             sim_tag = args.sim_tag, 
             ideal_map = args.ideal_map, 
             input_map = args.sky_map,
-            calibrate = args.calibrate, 
+            cal = args.calibrate, 
             mask_file = args.mask,
             nside_out = args.nside_out, 
             lmax = 400,
