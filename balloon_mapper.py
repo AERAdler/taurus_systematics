@@ -499,7 +499,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
             d_el = cr[3] - cr[1]
 
             if stitch_wide:
-                wide_beam_file = beam_file.replace("v2", "v2_wide") 
+                wide_beam_file = beam_file.replace("grid", "grid_wide") 
                 wd_file = open(opj(beamdir, 
                     wide_beam_file+"_{}_fields.pkl".format(det)), "rb")
                 wide_fields = pickle.load(wd_file)
