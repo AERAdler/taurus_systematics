@@ -10,6 +10,7 @@ import qpoint as qp
 import matplotlib.pyplot as plt
 import matplotlib.cm as cm
 import pickle
+import yaml
 import time
 from datetime import date, datetime
 import os 
@@ -571,8 +572,8 @@ def parse_single_det(beamdir, detname, lmax=2000, stitch_wide=False, plot=False)
 
     if stitch_wide:
         wide_detname= detname.replace("grid", "grid_wide") 
-        wd_file = open(opj(beamdir, 
-            wide_detname+"_fields.pkl".format(det)), "rb")
+        wd_file = open(opj(beamdir, wide_detname+"_fields.pkl".format(det)), 
+            "rb")
         wide_fields = pickle.load(wd_file)
         wd_file.close()
         e_co_wide = wide_fields["e_co"]
@@ -1020,7 +1021,7 @@ def main():
             cls = np.loadtxt(opj(basedir,"wmap7_r0p03_lensed_uK_ext.txt"), 
                     unpack=True)
             ell, cls = cls[0], cls[1:]
-            np.random.seed(25) 
+            np.random.seed(args.seed) 
             sky_alm = hp.synalm(cls, lmax=args.lmax, new=True, verbose=True)
         else:
             map_path = opj(basedir, args.sky_map)
@@ -1073,6 +1074,9 @@ def main():
         
 
         run_sim(args.sim_tag, sky_alm, **run_opts)
+        if rank==0:
+            with open(args.sim_tag+".yaml", w) as simparamfile:
+                yaml.dump(run_opts, simparamfile)
     if args.analyze:
         analyzis_dir = opj(basedir, "output")
         analysis(
