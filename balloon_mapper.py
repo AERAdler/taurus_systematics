@@ -155,12 +155,13 @@ def run_sim(simname, sky_alm,
             npairs=None, create_fpu=False, fov=2.0, beam_files=None,
             no_pairs=False, ab_diff = 90., btype="Gaussian", fwhm=43., 
             deconv_q=True, lmax=1000, mmax=4, pol_only=False, no_pol=False, 
-            add_ghosts=False, ghost_amp=0.01, el0=35., az0=0., sun_angle=6., 
-            freq=150., ground = None, filter_highpass=False, w_c=None, 
-            filter_m=1,hwp_mode=None, hwp_model="ideal", load_mueller=False, 
-            varphi=0.0, hfreq=1.0, hstepf=1/(12.*60*60), filter_4fhwp=False, 
-            nside_spin=1024, nside_out=512, balloon_track = None, killfrac=0., 
-            seed=25, preview_pointing=False, comm=None, verbose=1, **kwargs):
+            add_ghosts=False, ghost_amp=0.01, point_error=0, el0=35., az0=0., 
+            sun_angle=6., freq=150., ground = None, filter_highpass=False, 
+            w_c=None, filter_m=1, hwp_mode=None, hwp_model="ideal", 
+            load_mueller=False, varphi=0.0, hfreq=1.0, hstepf=1/(12.*60*60), 
+            filter_4fhwp=False, nside_spin=1024, nside_out=512, 
+            balloon_track = None, killfrac=0., seed=25, 
+            preview_pointing=False, comm=None, verbose=1, **kwargs):
     """
     Run beamconv simulations, either ground-based or balloon-borne. 
     Creates maps.
@@ -219,6 +220,9 @@ def run_sim(simname, sky_alm,
         Add ghost reflections to the main beam (default : False)  
     ghost_amp : float
         Amplitude of the ghosts (default : 0.01)
+    point_error: float or list
+        poining error. Scalar: random offset with given std, 
+        three-vector: offset by [az_off, el_off, polang_off] (default: 0)
     el0 : float
         Boresight starting elevation in degrees (default: 35.)
     az0 : float
@@ -331,7 +335,41 @@ def run_sim(simname, sky_alm,
         else:
             scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
                                   sensitive_freq=freq, file_names=beam_files)
+        if point_error!=0:
+            if isinstance(point_error, list):
+                az_err = np.radians(point_error[0]/60.)*np.ones(npairs)
+                el_err = np.radians(point_error[1]/60.)*np.ones(npairs)
+                polang_err = np.radians(point_error[2]/60.)*np.ones(npairs)
+            else:
+                point_err_rad = np.pi*point_error/60./180.
+                az_err = np.random.normal(scale=point_err_rad,size=npairs)
+                el_err = np.random.normal(scale=point_err_rad,size=npairs)
+                polang_err = np.random.normal(scale=point_err_rad,size=npairs)
 
+            theta_err = np.sqrt(az_err**2+el_err**2)
+            psi_err = np.arctan2(el_err, az_err)
+            phi_err = polang_err-psi_err
+
+            for bindex in range(rank, npairs,scan.mpi_size):
+                #Extract blm for detectors
+                blm = scan.beams[bindex][0].blm
+                blmI = blm[0].copy()
+                #Express in EB
+                blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
+                #Rotate by offset
+                hp.rotate_alm([blmI, blmE, blmA], psi_err, theta_err, 
+                    phi_err, lmax=lmax, mmax=lmax)
+                # Convert E,B beam coeff. back to spin representation
+                blmm2, blmp2 = tools.eb2spin(blmE, blmB)
+                ss.beams[bindex][0].blm = (blmI, blmm2, blmp2)
+
+                blm = scan.beams[bindex][1].blm
+                blmI = blm[0].copy()
+                blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
+                hp.rotate_alm([blmI, blmE, blmB], psi_err, theta_err, 
+                    phi_err, lmax=lmax, mmax=lmax)
+                blmm2, blmp2 = tools.eb2spin(blmE, blmB)
+                ss.beams[bindex][1].blm = (blmI, blmm2, blmp2)
 
         if hwp_model == "ideal":
             pass
@@ -472,7 +510,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
     beam_files_loc = beam_files[sat.mpi_rank::sat.mpi_size]
 
     num_beams = beam_files_loc.shape[0]
-    for bidx in xrange(num_beams):
+    for bidx in range(num_beams):
 
         beam_file = beam_files_loc[bidx]
 
@@ -885,6 +923,9 @@ def main():
         default=False)
     parser.add_argument("--ghost_amp", action="store_true", dest="ghost_amp",
         default=False)
+    parser.add_argument("--point_error", action="store", dest="point_error", 
+         default=0, help="pointing error. random with stdiv x arcmin or \
+                          offset by [az_off, el_off, polang_off]")
     parser.add_argument("--lmax", action="store", dest="lmax",
         default=1000, type=int)
     parser.add_argument("--mmax", action="store", dest="mmax",
@@ -1049,6 +1090,7 @@ def main():
                         mmax=args.mmax,
                         add_ghosts=args.add_ghosts,
                         ghost_amp=args.ghost_amp,
+                        point_error=args.point_error,
                         el0 = args.el0,
                         az0 = args.az0,
                         sun_angle = args.sun_angle,
