@@ -335,13 +335,13 @@ def run_sim(simname, sky_alm,
         else:
             scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
                                   sensitive_freq=freq, file_names=beam_files)
-        if point_error!=0:
-            if isinstance(point_error, list):
+        if point_error!=[0]:
+            if len(point_error)==3:
                 az_err = np.radians(point_error[0]/60.)*np.ones(npairs)
                 el_err = np.radians(point_error[1]/60.)*np.ones(npairs)
                 polang_err = np.radians(point_error[2]/60.)*np.ones(npairs)
             else:
-                point_err_rad = np.pi*point_error/60./180.
+                point_err_rad = np.pi*point_error[0]/60./180.
                 az_err = np.random.normal(scale=point_err_rad,size=npairs)
                 el_err = np.random.normal(scale=point_err_rad,size=npairs)
                 polang_err = np.random.normal(scale=point_err_rad,size=npairs)
@@ -351,26 +351,26 @@ def run_sim(simname, sky_alm,
             theta_err = np.sqrt(az_err**2+el_err**2)
             psi_err = polang_err-phi_err#Check CMB convention?
 
-            for bindex in range(rank, npairs,scan.mpi_size):
+            for bi in range(rank, npairs,scan.mpi_size):
                 #Extract blm for detectors
-                blm = scan.beams[bindex][0].blm
+                blm = scan.beams[bi][0].blm
                 blmI = blm[0].copy()
                 #Express in EB
                 blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
                 #Rotate by offset
-                hp.rotate_alm([blmI, blmE, blmA], psi_err, theta_err, 
-                    phi_err, lmax=lmax, mmax=lmax)
+                hp.rotate_alm([blmI, blmE, blmB], psi_err[bi], theta_err[bi], 
+                    phi_err[bi], lmax=lmax, mmax=lmax)
                 # Convert E,B beam coeff. back to spin representation
-                blmm2, blmp2 = tools.eb2spin(blmE, blmB)
-                ss.beams[bindex][0].blm = (blmI, blmm2, blmp2)
+                blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
+                scan.beams[bi][0].blm = (blmI, blmm2, blmp2)
 
-                blm = scan.beams[bindex][1].blm
+                blm = scan.beams[bi][1].blm
                 blmI = blm[0].copy()
                 blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
-                hp.rotate_alm([blmI, blmE, blmB], psi_err, theta_err, 
-                    phi_err, lmax=lmax, mmax=lmax)
-                blmm2, blmp2 = tools.eb2spin(blmE, blmB)
-                ss.beams[bindex][1].blm = (blmI, blmm2, blmp2)
+                hp.rotate_alm([blmI, blmE, blmB], psi_err[bi], theta_err[bi], 
+                    phi_err[bi], lmax=lmax, mmax=lmax)
+                blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
+                scan.beams[bi][1].blm = (blmI, blmm2, blmp2)
 
         if hwp_model == "ideal":
             pass
@@ -925,8 +925,8 @@ def main():
     parser.add_argument("--ghost_amp", action="store_true", dest="ghost_amp",
         default=False)
     parser.add_argument("--point_error", action="store", dest="point_error", 
-         default=0, help="pointing error. random with stdiv x arcmin or \
-                          offset by [az_off, el_off, polang_off]")
+         nargs="*", default=[0], help=("pointing error. random with stdiv "+ 
+         "x arcmin or offset by [az_off, el_off, polang_off]"), type=float)
     parser.add_argument("--lmax", action="store", dest="lmax",
         default=1000, type=int)
     parser.add_argument("--mmax", action="store", dest="mmax",
@@ -1118,7 +1118,7 @@ def main():
 
         run_sim(args.sim_tag, sky_alm, **run_opts)
         if rank==0:
-            with open(args.sim_tag+".yaml", w) as simparamfile:
+            with open(args.sim_tag+".yaml", "w") as simparamfile:
                 yaml.dump(run_opts, simparamfile)
     if args.analyze:
         analyzis_dir = opj(basedir, "output")
