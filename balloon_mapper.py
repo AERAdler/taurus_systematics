@@ -317,7 +317,7 @@ def run_sim(simname, sky_alm,
                          ctime_kwargs=dict(),
                          q_bore_kwargs=dict(el0=el0, az0=az0),
                          max_spin=2,
-                         nside_spin=256,
+                         nside_spin=nside_spin,
                          preview_pointing=False,
                          interp = True, 
                          filter_highpass = filter_highpass)
@@ -393,7 +393,7 @@ def run_sim(simname, sky_alm,
                 beami[1].set_hwp_mueller(model_name=hwp_model) 
             
         scan.partition_mission(chunksize=int(sample_rate*3600))
-        scan.allocate_maps(nside=512)
+        scan.allocate_maps(nside=nside_out)
         
         hwpf = 0.
         if hwp_mode == "stepped":
@@ -544,13 +544,13 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
         # store in pickle file
         with open(opj(beamdir, beam_file+".pkl"), "wb") as handle:
             if no_pairs:
-                a_opts.update({po_file : opj(beamdir, beam_file+".npy")})
+                a_opts.update({"po_file" : opj(beamdir, beam_file+".npy")})
                 pickle.dump(a_opts, handle, protocol=pickle.HIGHEST_PROTOCOL)
             else:
                 b_opts = dict(polang=polang_b, pol="B", name=beam_file+"_B")
                 b_opts.update(beam_opts)
-                b_opts.update({po_file : opj(beamdir, beam_file+"_B.npy")})
-                a_opts.update({po_file : opj(beamdir, beam_file+"_A.npy")})
+                b_opts.update({"po_file" : opj(beamdir, beam_file+"_B.npy")})
+                a_opts.update({"po_file" : opj(beamdir, beam_file+"_A.npy")})
                 pickle.dump([a_opts, b_opts], handle, 
                             protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -611,8 +611,8 @@ def parse_single_det(beamdir, detname, lmax=2000, stitch_wide=False, plot=False)
 
     if stitch_wide:
         wide_detname= detname.replace("grid", "grid_wide") 
-        wd_file = open(opj(beamdir, wide_detname+"_fields.pkl".format(det)), 
-            "rb")
+        wd_file = open(opj(beamdir, 
+            wide_detname+"_fields.pkl"), "rb")
         wide_fields = pickle.load(wd_file)
         wd_file.close()
         e_co_wide = wide_fields["e_co"]
