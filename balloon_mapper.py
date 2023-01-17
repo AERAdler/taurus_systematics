@@ -345,10 +345,11 @@ def run_sim(simname, sky_alm,
                 az_err = np.random.normal(scale=point_err_rad,size=npairs)
                 el_err = np.random.normal(scale=point_err_rad,size=npairs)
                 polang_err = np.random.normal(scale=point_err_rad,size=npairs)
-
+            #Rotate by phi around Oz, by theta around Ox' and by psi around the 
+            #newest z axis.
+            phi_err = np.arctan2(el_err, az_err)
             theta_err = np.sqrt(az_err**2+el_err**2)
-            psi_err = np.arctan2(el_err, az_err)
-            phi_err = polang_err-psi_err
+            psi_err = polang_err-phi_err#Check CMB convention?
 
             for bindex in range(rank, npairs,scan.mpi_size):
                 #Extract blm for detectors
