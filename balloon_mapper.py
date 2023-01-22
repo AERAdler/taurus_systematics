@@ -359,7 +359,7 @@ def run_sim(simname, sky_alm,
                 blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
                 #Rotate by offset
                 hp.rotate_alm([blmI, blmE, blmB], psi_err[bi], theta_err[bi], 
-                    phi_err[bi], lmax=lmax, mmax=lmax)
+                    phi_err[bi])
                 # Convert E,B beam coeff. back to spin representation
                 blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
                 scan.beams[bi][0].blm = (blmI, blmm2, blmp2)
@@ -368,7 +368,7 @@ def run_sim(simname, sky_alm,
                 blmI = blm[0].copy()
                 blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
                 hp.rotate_alm([blmI, blmE, blmB], psi_err[bi], theta_err[bi], 
-                    phi_err[bi], lmax=lmax, mmax=lmax)
+                    phi_err[bi])
                 blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
                 scan.beams[bi][1].blm = (blmI, blmm2, blmp2)
 
