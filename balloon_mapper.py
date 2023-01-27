@@ -275,7 +275,7 @@ def run_sim(simname, sky_alm,
     ndays = int(mlen/(24*60*60))
     track = np.loadtxt(opj(basedir, balloon_track))
     co_added_maps = np.zeros((3,hp.nside2npix(nside_out)))
-    co_added_cond = np.zeros(hp.nside2npix(nside_out))
+    co_added_cond = np.zeros(hp.nside2npix(nside_out))+1e12
     co_added_hits = np.zeros((hp.nside2npix(nside_out)))
     nights_visited = np.zeros(hp.nside2npix(nside_out))
     ctime0 = t0
@@ -732,14 +732,18 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     for ma in maps:
             ma[~mask] = np.nan
     """
-    #Rectangular mask
+    #Condition-number based mask
     mask = np.ones(12*nside_out**2)
+    mask[cond>5]=0.
+    #Rectangular mask
+    """
     theta, phi = hp.pix2ang(nside_out, np.arange(12*nside_out**2))
     max_dec = np.radians(20.)
     min_dec = np.radians(-80.)
     dec_centre = .5*np.pi - .5*(max_dec+min_dec)
     dec_hwidth = .5*(max_dec-min_dec)
     mask[np.abs(theta-dec_centre)>dec_hwidth]=0.
+    """
     mask[maps[0]==hp.UNSEEN]=0.
     fsky = np.sum(mask)/(12*nside_out**2)
     spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
@@ -765,12 +769,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             mi[mask[:]==0] = 0.
         #Calibration
         gain = 1.
-        if cal is not None:
-            cl_ideal = tools.spice(masked_ideal, mask=mask, **spice_opts2use)
-            cl_ideal = cl_ideal/bl**2
-            np.save(opj(analyzis_dir, "spectra", 
+        cl_ideal = tools.spice(masked_ideal, mask=mask, **spice_opts2use)
+        cl_ideal = cl_ideal/bl**2
+        np.save(opj(analyzis_dir, "spectra", 
                    "{}_idealspectra_rect.npy".format(sim_tag)), cl_ideal)
             #Compute Cls for the smoothed map, deconvolve
+        if cal is not None:
             gain = np.average(cl_ideal[cal, l1:l2]/cl[cal, l1:l2])
             print("{} gain for map {} versus ideal is: {:.3f}".format(
                 fstrs[cal], sim_tag, gain)) 
@@ -798,10 +802,10 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             mi[~mask] = np.nan
         #Calibration
         gain = 1.
+        cl_input= tools.spice(masked_input, mask=mask, **spice_opts2use)
+        cl_input = cl_input/bl**2
+        #Compute Cls for the smoothed map, deconvolve
         if cal is not None:
-            cl_input= tools.spice(masked_input, mask=mask, **spice_opts2use)
-            cl_input = cl_input/bl**2
-            #Compute Cls for the smoothed map, deconvolve
             gain = np.average(cl_input[cal, l1:l2]/cl[cal, l1:l2])
             print("{} gain for map {} versus input is: {:.3f}".format(
                   fstrs[cal], sim_tag, gain))
