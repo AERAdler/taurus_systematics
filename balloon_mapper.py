@@ -148,10 +148,50 @@ def autoscale_y(ax, margin=0.1):
 
     ax.set_ylim(bot,top)
 
+def balloon_night_ctime(**kwargs):
+
+    ctime0 = kwargs.get("ctime0")
+    nsamp = kwargs.get("nsamp")
+    sample_rate = kwargs.get("sample_rate")
+    track_file = kwargs.get("track_file")
+    latlon = kwargs.get("latlon")
+    sun_angle = kwargs.get("sun_angle")
+    track = np.loadtxt(track_file)
+    ctime = ctime0+np.arange(nsamp)/sample_rate
+    night = np.zeros_like(ctime, dtype=bool)
+    lat = np.interp(ctime, track[:,0], track[:,1])
+    lon = np.interp(ctime, track[:,0], track[:,2])
+    h = 35000+200*np.random.normal()
+
+    gondola = ephem.Observer()
+    gondola.elevation = h
+
+    for i in range(0, nsamp, int(sample_rate)):
+        
+        #PyEphem calculation of sunset and sunrise
+        gondola.lat = ephem.degrees(np.radians(lat[i]))
+        gondola.lon = ephem.degrees(np.radians(lon[i]))
+        gondola.date = datetime.utcfromtimestamp(ctime[i])
+        night[i:i+int(sample_rate)] = ephem.Sun(gondola).alt < -np.radians(sun_angle)
+    
+    if latlon:
+        lat = lat[night]
+        lon = lon[night]
+        ctime = ctime[night]
+        return lat, lon, ctime
+    else:
+        ctime = ctime[night]
+        return ctime
+
+def pass_ctime(**kwargs):
+    ctime = kwargs.pop("ctime")
+    return ctime
+
+
 def run_sim(simname, sky_alm,
             basedir = opj("/","mn", "stornext", "u3", "aeadler", "ssn"),
             beamdir = "beams", outdir = opj("output", "maps"),
-            mlen=24*60*60,  sample_rate=119.1, t0=1546300800, 
+            mlen=24*60*60,  sample_rate=119.1, ctime0=1427376366, 
             npairs=None, create_fpu=False, fov=2.0, beam_files=None,
             no_pairs=False, ab_diff = 90., btype="Gaussian", fwhm=43., 
             deconv_q=True, lmax=1000, mmax=4, pol_only=False, no_pol=False, 
@@ -185,7 +225,7 @@ def run_sim(simname, sky_alm,
         Mission duration in seconds
     sample_rate : float
         Number of samples per second (default: 50.01)
-    t0 : int 
+    ctime0 : int 
         Mission start-time, Unix time (default: 1546300800 for Jan 1, 2019)
     npairs : int
         Number of detector pairs
@@ -272,185 +312,151 @@ def run_sim(simname, sky_alm,
     """
 
     np.random.seed(seed)
-    ndays = int(mlen/(24*60*60))
     track = np.loadtxt(opj(basedir, balloon_track))
-    co_added_maps = np.zeros((3,hp.nside2npix(nside_out)))
-    co_added_cond = np.zeros(hp.nside2npix(nside_out))+1e12
-    co_added_hits = np.zeros((hp.nside2npix(nside_out)))
-    nights_visited = np.zeros(hp.nside2npix(nside_out))
-    ctime0 = t0
-    night_idx = 0
-    while ctime0<t0+mlen:
-        track_idx = np.argmin(np.absolute(track[:,0]-ctime0))
-        lat = track[track_idx,1]
-        lon = track[track_idx,2]
-        if rank==0:
-            print(track[track_idx,0],lat, lon)
-        h = 35000+200*np.random.normal()
-
-        ymd = date.fromtimestamp(ctime0).strftime("%Y%m%d")
-        #PyEphem calculation of sunset and sunrise
-        sun = ephem.Sun()
-        gondola = ephem.Observer()
-        gondola.lon = ephem.degrees(np.radians(lon))
-        gondola.lat = ephem.degrees(np.radians(lat))
-        gondola.date = datetime.utcfromtimestamp(ctime0)
-        gondola.elevation = h
-        gondola.horizon = np.radians(-sun_angle)
-        next_set = djd_to_unix_t(gondola.next_setting(sun))
-        next_rise = djd_to_unix_t(gondola.next_rising(sun))
-        #Key assumption: we reach float altitude at daytime. So the first 
-        #night might be lost by the following two lines
-        if next_rise<next_set:#i.e. we are at night
-            ctime0 = next_rise + 60
-            continue
-        scan_duration = next_rise - next_set
-        if rank==0:
-            print("{:d}GHz, night {:d}, ctime0 {:d}, duration: {:.2f}h".format(
-                      int(freq), night_idx, ctime0, scan_duration/3600.))
-        scan = ScanStrategy(scan_duration, sample_rate=sample_rate, 
-                            lat=lat, lon=lon, ctime0=next_set)
-        #reverse scan direction every night
-        scan_opts = dict(scan_speed=30.*int(2*(night_idx%2-.5)), 
-                         use_strictly_az=True,
-                         q_bore_func=scan.strictly_az, 
-                         ctime_kwargs=dict(),
-                         q_bore_kwargs=dict(el0=el0, az0=az0),
-                         max_spin=2,
-                         nside_spin=nside_spin,
-                         preview_pointing=False,
-                         interp = True, 
-                         filter_highpass = filter_highpass)
-            
-
-        if create_fpu:#A square focal plane
-            beam_opts = dict(lmax=lmax, fwhm=fwhm, btype=btype, 
-                             sensitive_freq=freq, deconv_q=deconv_q)
-            nfloor = int(np.floor(np.sqrt(npairs)))
-            if btype=="PO":
-                beam_opts["po_file"] = beam_files#It"s just one file here
-            scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov, 
-                                    ab_diff=ab_diff, **beam_opts)
-
-        else:
-            scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
-                                  sensitive_freq=freq, file_names=beam_files)
-        if point_error!=[0]:
-            if len(point_error)==3:
-                az_err = np.radians(point_error[0]/60.)*np.ones(npairs)
-                el_err = np.radians(point_error[1]/60.)*np.ones(npairs)
-                polang_err = np.radians(point_error[2]/60.)*np.ones(npairs)
-            else:
-                point_err_rad = np.pi*point_error[0]/60./180.
-                az_err = np.random.normal(scale=point_err_rad,size=npairs)
-                el_err = np.random.normal(scale=point_err_rad,size=npairs)
-                polang_err = np.random.normal(scale=point_err_rad,size=npairs)
-            #Rotate by phi around Oz, by theta around Ox' and by psi around the 
-            #newest z axis.
-            phi_err = np.arctan2(el_err, az_err)
-            theta_err = np.sqrt(az_err**2+el_err**2)
-            psi_err = polang_err-phi_err#Check CMB convention?
-
-            for bi in range(rank, npairs,scan.mpi_size):
-                #Extract blm for detectors
-                blm = scan.beams[bi][0].blm
-                blmI = blm[0].copy()
-                #Express in EB
-                blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
-                #Rotate by offset
-                hp.rotate_alm([blmI, blmE, blmB], psi_err[bi], theta_err[bi], 
-                    phi_err[bi])
-                # Convert E,B beam coeff. back to spin representation
-                blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
-                scan.beams[bi][0].blm = (blmI, blmm2, blmp2)
-
-                blm = scan.beams[bi][1].blm
-                blmI = blm[0].copy()
-                blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
-                hp.rotate_alm([blmI, blmE, blmB], psi_err[bi], theta_err[bi], 
-                    phi_err[bi])
-                blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
-                scan.beams[bi][1].blm = (blmI, blmm2, blmp2)
-
-        if hwp_model == "ideal":
-            pass
-        elif "band" in hwp_model:
-            center_nu = 185.
-            if hwp_model=="band5":
-                stack = hwp_band5(center_nu)
-            elif hwp_model=="band3":
-                stack = hwp_band3(center_nu)
-            else:
-                stack = hwp_band(center_nu)
-            for beami in scan.beams:
-                beami[0].set_hwp_mueller(thicknesses=stack[0], indices=stack[1],
-                    losses=stack[2], angles=stack[3])
-                beami[1].set_hwp_mueller(thicknesses=stack[0], indices=stack[1],
-                    losses=stack[2], angles=stack[3]) 
-        else:
-            for beami in scan.beams:
-                beami[0].set_hwp_mueller(model_name=hwp_model)
-                beami[1].set_hwp_mueller(model_name=hwp_model) 
-            
-        scan.partition_mission(chunksize=int(sample_rate*3600))
-        scan.allocate_maps(nside=nside_out)
-        
-        hwpf = 0.
-        if hwp_mode == "stepped":
-            hwpf = hstepf
-        elif hwp_mode == "continuous":
-            hwpf = hfreq   
-        scan.set_hwp_mod(mode=hwp_mode, freq=hwpf, varphi=varphi)
-        
-        if filter_highpass and (w_c is not None):
-            scan.set_filter_dict(w_c, m=filter_m)
-
-        if ground:
-            if rank==0:
-                world_map = hp.read_map(opj(basedir,"ground_input",
-                            "SSMIS","SSMIS-{}-91H.fits".format(ymd)))
-                ground_template = template_from_position(world_map, 
-                    lat, lon, h, nside_out=4096, cmb=False, freq=95.,
-                                                     frac_bwidth=.2)
-                ground_alm = hp.map2alm([ground_template, 
-                                    np.zeros_like(ground_template), 
-                                    np.zeros_like(ground_template)], 
-                                    lmax = lmax)
-                ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
-            else:
-                ground_alm = np.zeros((3,hp.Alm.getsize(lmax)), dtype=complex)
-            comm.Bcast(ground_alm, root=0)
-
-            scan.scan_instrument_mpi(sky_alm, ground_alm=ground_alm, 
-                                     **scan_opts)
-        
-        else:
-            scan.scan_instrument_mpi(sky_alm, **scan_opts)
-        ctime0 = next_rise+60
-        maps, cond, proj = scan.solve_for_map(return_proj=True)
-        if scan.mpi_rank == 0:
-            hp.write_map(opj(basedir, outdir,
-                 "maps_"+simname+"_{:02d}.fits".format(night_idx)), maps)
-            hp.write_map(opj(basedir, outdir, 
-                "cond_"+simname+"_{:02d}.fits".format(night_idx)), cond)
-            hp.write_map(opj(basedir, outdir, 
-                "hits_"+simname+"_{:02d}.fits".format(night_idx)), proj[0])
-            co_added_maps[:, maps[0]!=hp.UNSEEN] += maps[:, maps[0]!=hp.UNSEEN]
-            co_added_hits += proj[0]
-            co_added_cond[maps[0]!=hp.UNSEEN] = np.minimum(
-                cond[maps[0]!=hp.UNSEEN], co_added_cond[maps[0]!=hp.UNSEEN])
-            nights_visited[maps[0]!=hp.UNSEEN] += 1
-            night_idx +=1
+    maps = np.zeros((3,hp.nside2npix(nside_out)))
+    cond = np.zeros(hp.nside2npix(nside_out))
+    hits = np.zeros((hp.nside2npix(nside_out)))
     
+    
+    nsamp = int(mlen*sample_rate)
+    ctime_dict = dict(ctime0 = ctime0, nsamp = nsamp,
+        sample_rate = sample_rate, track_file = balloon_track, 
+        latlon = True, sun_angle = 6.)
+    lat, lon, ctime = balloon_night_ctime(**ctime_dict)
+    night_samps = len(ctime)
+    passct_kwargs = dict(ctime=ctime)
+    
+    scan = ScanStrategy(sample_rate=sample_rate, num_samples=night_samps, 
+                external_pointing=True, ctime0=ctime0, lat=lat, lon=lon)
+    scan_opts = dict(scan_speed=30., ###
+                     q_bore_func=scan.balloon_night_qbore, 
+                     q_bore_kwargs=dict(el0=el0, az0=az0),
+                     ctime_func=pass_ctime,
+                     ctime_kwargs=passct_kwargs,
+                     max_spin=2,
+                     nside_spin=nside_spin,
+                     preview_pointing=False,
+                     interp = True, 
+                     filter_highpass = filter_highpass)
+        
+
+    if create_fpu:#A square focal plane
+        beam_opts = dict(lmax=lmax, fwhm=fwhm, btype=btype, 
+                         sensitive_freq=freq, deconv_q=deconv_q)
+        nfloor = int(np.floor(np.sqrt(npairs)))
+        if btype=="PO":
+            beam_opts["po_file"] = beam_files#It"s just one file here
+        scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov, 
+                                ab_diff=ab_diff, **beam_opts)
+
+    else:
+        scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
+                              sensitive_freq=freq, file_names=beam_files)
+    if point_error!=[0]:
+        if len(point_error)==3:
+            az_err = np.radians(point_error[0]/60.)*np.ones(npairs)
+            el_err = np.radians(point_error[1]/60.)*np.ones(npairs)
+            polang_err = np.radians(point_error[2]/60.)*np.ones(npairs)
+        else:
+            point_err_rad = np.pi*point_error[0]/60./180.
+            az_err = np.random.normal(scale=point_err_rad,size=npairs)
+            el_err = np.random.normal(scale=point_err_rad,size=npairs)
+            polang_err = np.random.normal(scale=point_err_rad,size=npairs)
+        #Rotate by phi around Oz, by theta around Ox' and by psi around the 
+        #newest z axis.
+        phi_err = np.arctan2(el_err, az_err)
+        theta_err = np.sqrt(az_err**2+el_err**2)
+        psi_err = polang_err-phi_err#Check CMB convention?
+
+        for bi in range(rank, npairs,scan.mpi_size):
+            #Extract blm for detectors
+            blm = scan.beams[bi][0].blm
+            blmI = blm[0].copy()
+            #Express in EB
+            blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
+            #Rotate by offset
+            hp.rotate_alm([blmI, blmE, blmB], psi_err[bi], theta_err[bi], 
+                phi_err[bi])
+            # Convert E,B beam coeff. back to spin representation
+            blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
+            scan.beams[bi][0].blm = (blmI, blmm2, blmp2)
+
+            blm = scan.beams[bi][1].blm
+            blmI = blm[0].copy()
+            blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
+            hp.rotate_alm([blmI, blmE, blmB], psi_err[bi], theta_err[bi], 
+                phi_err[bi])
+            blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
+            scan.beams[bi][1].blm = (blmI, blmm2, blmp2)
+
+    if hwp_model == "ideal":
+        pass
+    elif "band" in hwp_model:
+        center_nu = 185.
+        if hwp_model=="band5":
+            stack = hwp_band5(center_nu)
+        elif hwp_model=="band3":
+            stack = hwp_band3(center_nu)
+        else:
+            stack = hwp_band(center_nu)
+        for beami in scan.beams:
+            beami[0].set_hwp_mueller(thicknesses=stack[0], indices=stack[1],
+                losses=stack[2], angles=stack[3])
+            beami[1].set_hwp_mueller(thicknesses=stack[0], indices=stack[1],
+                losses=stack[2], angles=stack[3]) 
+    else:
+        for beami in scan.beams:
+            beami[0].set_hwp_mueller(model_name=hwp_model)
+            beami[1].set_hwp_mueller(model_name=hwp_model) 
+        
+    scan.partition_mission(chunksize=int(sample_rate*3600))
+    scan.allocate_maps(nside=nside_out)
+    
+    hwpf = 0.
+    if hwp_mode == "stepped":
+        hwpf = hstepf
+    elif hwp_mode == "continuous":
+        hwpf = hfreq   
+    scan.set_hwp_mod(mode=hwp_mode, freq=hwpf, varphi=varphi)
+    
+    if filter_highpass and (w_c is not None):
+        scan.set_filter_dict(w_c, m=filter_m)
+
+    if ground:
+        print("Feature under renovation, doing pure sky scan for now")
+        """
+        if rank==0:
+            world_map = hp.read_map(opj(basedir,"ground_input",
+                        "SSMIS","SSMIS-{}-91H.fits".format(ymd)))
+            ground_template = template_from_position(world_map, 
+                lat, lon, h, nside_out=4096, cmb=False, freq=95.,
+                                                 frac_bwidth=.2)
+            ground_alm = hp.map2alm([ground_template, 
+                                np.zeros_like(ground_template), 
+                                np.zeros_like(ground_template)], 
+                                lmax = lmax)
+            ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
+        else:
+            ground_alm = np.zeros((3,hp.Alm.getsize(lmax)), dtype=complex)
+
+        comm.Bcast(ground_alm, root=0)
+        scan.scan_instrument_mpi(sky_alm, ground_alm=ground_alm, 
+                                 **scan_opts)
+        """
+        scan.scan_instrument_mpi(sky_alm, **scan_opts)
+    else:
+        scan.scan_instrument_mpi(sky_alm, **scan_opts)
+
+    maps, cond, proj = scan.solve_for_map(return_proj=True)
+
     if scan.mpi_rank==0:
 
-        co_added_maps[:,nights_visited!=0] /= nights_visited[nights_visited!=0]
-        hp.write_map(opj(basedir, outdir, "maps_"+simname+"_coadd.fits"),
-                 co_added_maps)
-        hp.write_map(opj(basedir, outdir, "hits_"+simname+"_coadd.fits"),
-                 co_added_hits)
-        hp.write_map(opj(basedir, outdir, "cond_"+simname+"_coadd.fits"),
-                 co_added_cond)
+        hp.write_map(opj(basedir, outdir, "maps_"+simname+".fits"),
+             maps)
+        hp.write_map(opj(basedir, outdir, "hits_"+simname+".fits"),
+             cond)
+        hp.write_map(opj(basedir, outdir, "cond_"+simname+".fits"),
+             proj[0])
         
     return
 
@@ -1081,7 +1087,7 @@ def main():
                         outdir = outdir,
                         mlen= args.days*24*60*60,
                         sample_rate=args.sample_rate,
-                        t0 = args.t0,
+                        ctime0 = args.ctime0,
                         npairs=npairs,
                         create_fpu=args.create_fpu,
                         fov=args.fov,
