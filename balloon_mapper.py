@@ -167,7 +167,8 @@ def balloon_night_ctime(**kwargs):
     gondola.elevation = h
 
     for i in range(0, nsamp, int(sample_rate)):
-        
+        if (i%int(3600*24*sample_rate)==0):
+            print(int(i/3600/24/sample_rate), rank)
         #PyEphem calculation of sunset and sunrise
         gondola.lat = ephem.degrees(np.radians(lat[i]))
         gondola.lon = ephem.degrees(np.radians(lon[i]))
@@ -323,6 +324,7 @@ def run_sim(simname, sky_alm,
         sample_rate = sample_rate, track_file = balloon_track, 
         latlon = True, sun_angle = 6.)
     lat, lon, ctime = balloon_night_ctime(**ctime_dict)
+    print("Rank {} computed lon, lat, ctime".format(rank))
     night_samps = len(ctime)
     passct_kwargs = dict(ctime=ctime)
     
@@ -352,6 +354,7 @@ def run_sim(simname, sky_alm,
     else:
         scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
                               sensitive_freq=freq, file_names=beam_files)
+        print("loaded focal plane")
     if point_error!=[0]:
         if len(point_error)==3:
             az_err = np.radians(point_error[0]/60.)*np.ones(npairs)
@@ -408,8 +411,9 @@ def run_sim(simname, sky_alm,
         for beami in scan.beams:
             beami[0].set_hwp_mueller(model_name=hwp_model)
             beami[1].set_hwp_mueller(model_name=hwp_model) 
-        
-    scan.partition_mission(chunksize=int(sample_rate*3600))
+    #print("Rank {} partitioning".format(rank))
+    scan.partition_mission(chunksize=int(sample_rate*3600*24))
+    #print("Partitioned {}!".format(rank))
     scan.allocate_maps(nside=nside_out)
     
     hwpf = 0.
@@ -453,9 +457,9 @@ def run_sim(simname, sky_alm,
 
         hp.write_map(opj(basedir, outdir, "maps_"+simname+".fits"),
              maps)
-        hp.write_map(opj(basedir, outdir, "hits_"+simname+".fits"),
-             cond)
         hp.write_map(opj(basedir, outdir, "cond_"+simname+".fits"),
+             cond)
+        hp.write_map(opj(basedir, outdir, "hits_"+simname+".fits"),
              proj[0])
         
     return
@@ -671,8 +675,8 @@ def parse_single_det(beamdir, detname, lmax=2000, stitch_wide=False, plot=False)
 
 
 def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
-             cal=None, mask_file=None, nside_out=512, lmax=700, 
-             l1=100, l2=300, fwhm=60., plot=False, label=None):
+             cal=None, mask_file=None, nside_out=256, lmax=400, 
+             l1=100, l2=300, fwhm=30., plot=False, label=None):
     """
     Function to analyze simulation output 
     Arguments
@@ -699,15 +703,15 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     mask : string
         Mask file to apply to the maps (default: None)
     nside_out : int
-        Healpix NSIDE of the output map. (default: 512)
+        Healpix NSIDE of the output map. (default: 256)
     lmax : int
-        Maximum l when making power spectra. (default: 700)
+        Maximum l when making power spectra. (default: 400)
     l1 : int
         Lower edge of the calibration window. (default: 100)
     l2 : int
         Higher edge of the calibration window. (default: 300)
     fwhm : float
-        fwhm of the beam in arcmin. (default: 60.)
+        fwhm of the beam in arcmin. (default: 30.)
     plot : bool
         Whether to plot the spectra we have 
     label : string
@@ -740,7 +744,8 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     """
     #Condition-number based mask
     mask = np.ones(12*nside_out**2)
-    mask[cond>5]=0.
+    mask[cond>4]=0.
+    mask[hits==0]=0.
     #Rectangular mask
     """
     theta, phi = hp.pix2ang(nside_out, np.arange(12*nside_out**2))
@@ -750,7 +755,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     dec_hwidth = .5*(max_dec-min_dec)
     mask[np.abs(theta-dec_centre)>dec_hwidth]=0.
     """
-    mask[maps[0]==hp.UNSEEN]=0.
+    mask[maps[0]==0]=0.
     fsky = np.sum(mask)/(12*nside_out**2)
     spice_opts2use = get_default_spice_opts(lmax=lmax, fsky=fsky)
 
@@ -759,7 +764,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     bl = hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)
     cl = cl/bl**2
     np.save(opj(analyzis_dir, "spectra", 
-            "{}_spectra_rect.npy".format(sim_tag)), cl)
+            "{}_spectra.npy".format(sim_tag)), cl)
 
     
     #Versus ideal
@@ -966,7 +971,7 @@ def main():
         type=float, default=6., help="Sun at least x degrees under horizon")
  
     #Beamconv timing
-    parser.add_argument("--t0", action="store", dest="t0",
+    parser.add_argument("--ctime0", action="store", dest="ctime0",
         default=1427376366, type=float)
     parser.add_argument("--days", action="store", dest="days",
         default=1, type=int)
