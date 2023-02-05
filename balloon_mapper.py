@@ -196,13 +196,13 @@ def run_sim(simname, sky_alm,
             npairs=None, create_fpu=False, fov=2.0, beam_files=None,
             no_pairs=False, ab_diff = 90., btype="Gaussian", fwhm=43., 
             deconv_q=True, lmax=1000, mmax=4, pol_only=False, no_pol=False, 
-            add_ghosts=False, ghost_amp=0.01, point_error=0, el0=35., az0=0., 
-            sun_angle=6., freq=150., ground = None, filter_highpass=False, 
-            w_c=None, filter_m=1, hwp_mode=None, hwp_model="ideal", 
-            load_mueller=False, varphi=0.0, hfreq=1.0, hstepf=1/(12.*60*60), 
-            filter_4fhwp=False, nside_spin=1024, nside_out=512, 
-            balloon_track = None, killfrac=0., seed=25, 
-            preview_pointing=False, comm=None, verbose=1, **kwargs):
+            add_ghosts=False, ghost_amp=0.01, point_error_mode=0, 
+            point_error=[0.,0.,0.], el0=35., az0=0., sun_angle=6., freq=150., 
+            ground = None, filter_highpass=False, w_c=None, filter_m=1, 
+            hwp_mode=None, hwp_model="ideal", load_mueller=False, varphi=0.0, 
+            hfreq=1.0, hstepf=1/(12.*60*60), filter_4fhwp=False, 
+            nside_spin=1024, nside_out=512, balloon_track = None, killfrac=0., 
+            seed=25, preview_pointing=False, comm=None, verbose=1, **kwargs):
     """
     Run beamconv simulations, either ground-based or balloon-borne. 
     Creates maps.
@@ -261,9 +261,11 @@ def run_sim(simname, sky_alm,
         Add ghost reflections to the main beam (default : False)  
     ghost_amp : float
         Amplitude of the ghosts (default : 0.01)
-    point_error: float or list
-        poining error. Scalar: random offset with given std, 
-        three-vector: offset by [az_off, el_off, polang_off] (default: 0)
+    point_error_mode: int
+        pointing error mode. 0 none, 1 random shift per beam with std given
+        by point_error, 2 offset all beams by point_error (default : 0)
+    point_error: array-like
+        pointing error of [az_off, el_off, polang_off] (default : [0,0,0])
     el0 : float
         Boresight starting elevation in degrees (default: 35.)
     az0 : float
@@ -355,16 +357,19 @@ def run_sim(simname, sky_alm,
         scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
                               sensitive_freq=freq, file_names=beam_files)
         print("loaded focal plane")
-    if point_error!=[0]:
-        if len(point_error)==3:
+    if point_error_mode!=0:
+        if point_error_mode==1:
+            perr_rad = np.pi*np.array(point_error)/60./180.
+            az_err = np.random.normal(scale=perr_rad[0], size=npairs)
+            el_err = np.random.normal(scale=perr_rad[1], size=npairs)
+            polang_err = np.random.normal(scale=perr_rad[2], size=npairs)
+
+        elif point_error_mode==2:
             az_err = np.radians(point_error[0]/60.)*np.ones(npairs)
             el_err = np.radians(point_error[1]/60.)*np.ones(npairs)
             polang_err = np.radians(point_error[2]/60.)*np.ones(npairs)
         else:
-            point_err_rad = np.pi*point_error[0]/60./180.
-            az_err = np.random.normal(scale=point_err_rad,size=npairs)
-            el_err = np.random.normal(scale=point_err_rad,size=npairs)
-            polang_err = np.random.normal(scale=point_err_rad,size=npairs)
+            raise ValueError("Unknown pointing error mode")
         #Rotate by phi around Oz, by theta around Ox' and by psi around the 
         #newest z axis.
         phi_err = np.arctan2(el_err, az_err)
@@ -939,9 +944,10 @@ def main():
         default=False)
     parser.add_argument("--ghost_amp", action="store_true", dest="ghost_amp",
         default=False)
+    parser.add_argument("--point_error_mode", type=int, action="store",
+        default=0, dest="point_error_mode", help="Pointing error mode: [0,1,2]")
     parser.add_argument("--point_error", action="store", dest="point_error", 
-         nargs="*", default=[0], help=("pointing error. random with stdiv "+ 
-         "x arcmin or offset by [az_off, el_off, polang_off]"), type=float)
+         nargs=3, default=[0, 0, 0], help="pointing error", type=float)
     parser.add_argument("--lmax", action="store", dest="lmax",
         default=1000, type=int)
     parser.add_argument("--mmax", action="store", dest="mmax",
@@ -1106,6 +1112,7 @@ def main():
                         mmax=args.mmax,
                         add_ghosts=args.add_ghosts,
                         ghost_amp=args.ghost_amp,
+                        point_error_mode = args.point_error_mode,
                         point_error=args.point_error,
                         el0 = args.el0,
                         az0 = args.az0,
