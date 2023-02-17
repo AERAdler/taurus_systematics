@@ -196,8 +196,8 @@ def run_sim(simname, sky_alm,
             npairs=None, create_fpu=False, fov=2.0, beam_files=None,
             no_pairs=False, ab_diff = 90., btype="Gaussian", fwhm=43., 
             deconv_q=True, lmax=1000, mmax=4, pol_only=False, no_pol=False, 
-            add_ghosts=False, ghost_amp=0.01, point_error_mode=0, 
-            point_error=[0.,0.,0.], el0=35., az0=0., sun_angle=6., freq=150., 
+            add_ghosts=False, ghost_amp=0.01, point_bias_mode=0, 
+            point_bias=[0.,0.,0.], el0=35., az0=0., sun_angle=6., freq=150., 
             ground = None, filter_highpass=False, w_c=None, filter_m=1, 
             hwp_mode=None, hwp_model="ideal", load_mueller=False, varphi=0.0, 
             hfreq=1.0, hstepf=1/(12.*60*60), filter_4fhwp=False, 
@@ -261,10 +261,10 @@ def run_sim(simname, sky_alm,
         Add ghost reflections to the main beam (default : False)  
     ghost_amp : float
         Amplitude of the ghosts (default : 0.01)
-    point_error_mode: int
+    point_bias_mode: int
         pointing error mode. 0 none, 1 random shift per beam with std given
-        by point_error, 2 offset all beams by point_error (default : 0)
-    point_error: array-like
+        by point_bias, 2 offset all beams by point_error (default : 0)
+    point_bias: array-like
         pointing error of [az_off, el_off, polang_off] (default : [0,0,0])
     el0 : float
         Boresight starting elevation in degrees (default: 35.)
@@ -342,7 +342,6 @@ def run_sim(simname, sky_alm,
                      preview_pointing=False,
                      interp = True, 
                      filter_highpass = filter_highpass)
-        
 
     if create_fpu:#A square focal plane
         beam_opts = dict(lmax=lmax, fwhm=fwhm, btype=btype, 
@@ -357,19 +356,17 @@ def run_sim(simname, sky_alm,
         scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
                               sensitive_freq=freq, file_names=beam_files)
         print("loaded focal plane")
-    if point_error_mode!=0:
-        if point_error_mode==1:
-            perr_rad = np.pi*np.array(point_error)/60./180.
-            az_err = np.random.normal(scale=perr_rad[0], size=npairs)
-            el_err = np.random.normal(scale=perr_rad[1], size=npairs)
-            polang_err = np.random.normal(scale=perr_rad[2], size=npairs)
-
-        elif point_error_mode==2:
-            az_err = np.radians(point_error[0]/60.)*np.ones(npairs)
-            el_err = np.radians(point_error[1]/60.)*np.ones(npairs)
-            polang_err = np.radians(point_error[2]/60.)*np.ones(npairs)
+    if point_bias_mode!=0:
+        pbdeg = np.array(point_bias)/60.
+        if point_bias_mode==1:
+            scan.set_global_prop_random(dict(az_bias=pbdeg[0],
+                       el_bias=pbdeg[1], polang_bias=pbdeg[2])) 
+        elif point_bias_mode==2:
+            scan.set_global_prop(dict(az_bias=pbdeg[0],
+                       el_bias=pbdeg[1], polang_bias=pbdeg[2])) 
         else:
             raise ValueError("Unknown pointing error mode")
+        """
         #Rotate by phi around Oz, by theta around Ox' and by psi around the 
         #newest z axis.
         phi_err = np.arctan2(el_err, az_err)
@@ -388,7 +385,7 @@ def run_sim(simname, sky_alm,
             # Convert E,B beam coeff. back to spin representation
             blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
             scan.beams[bi][0].blm = (blmI, blmm2, blmp2)
-
+            #Second beam, same as first
             blm = scan.beams[bi][1].blm
             blmI = blm[0].copy()
             blmE, blmB = beam_tools.spin2eb(blm[1], blm[2])
@@ -396,7 +393,7 @@ def run_sim(simname, sky_alm,
                 phi_err[bi])
             blmm2, blmp2 = beam_tools.eb2spin(blmE, blmB)
             scan.beams[bi][1].blm = (blmI, blmm2, blmp2)
-
+        """    
     if hwp_model == "ideal":
         pass
     elif "band" in hwp_model:
@@ -788,7 +785,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         cl_ideal = tools.spice(masked_ideal, mask=mask, **spice_opts2use)
         cl_ideal = cl_ideal/bl**2
         np.save(opj(analyzis_dir, "spectra", 
-                   "{}_idealspectra_rect.npy".format(sim_tag)), cl_ideal)
+                   "{}_idealspectra.npy".format(sim_tag)), cl_ideal)
             #Compute Cls for the smoothed map, deconvolve
         if cal is not None:
             gain = np.average(cl_ideal[cal, l1:l2]/cl[cal, l1:l2])
@@ -802,7 +799,8 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         diff_ideal_cl = tools.spice(diff_ideal, mask=mask, **spice_opts2use)
         diff_ideal_cl = diff_ideal_cl/bl**2
         np.save(opj(analyzis_dir, "spectra", 
-                    "{}_diff_ideal_spectra.npy".format(sim_tag)), diff_ideal_cl)
+            "{}_diff_ideal_spectra_cal{}.npy".format(sim_tag, fstrs[cal])),
+            diff_ideal_cl)
 
     #Versus input
     if input_map:
@@ -832,7 +830,8 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
         diff_input_cl = diff_input_cl/bl**2
         np.save(opj(analyzis_dir, "spectra", 
-                    "{}_diff_input_spectra.npy".format(sim_tag)), diff_input_cl)
+            "{}_diff_input_spectra_cal.npy".format(sim_tag, fstrs[cal])), 
+            diff_input_cl)
 
     if not plot:
         return 
@@ -944,10 +943,10 @@ def main():
         default=False)
     parser.add_argument("--ghost_amp", action="store_true", dest="ghost_amp",
         default=False)
-    parser.add_argument("--point_error_mode", type=int, action="store",
-        default=0, dest="point_error_mode", help="Pointing error mode: [0,1,2]")
-    parser.add_argument("--point_error", action="store", dest="point_error", 
-         nargs=3, default=[0, 0, 0], help="pointing error", type=float)
+    parser.add_argument("--point_bias_mode", type=int, action="store",
+        default=0, dest="point_bias_mode", help="Pointing bias mode: [0,1,2]")
+    parser.add_argument("--point_bias", action="store", dest="point_bias", 
+         nargs=3, default=[0, 0, 0], help="pointing bias", type=float)
     parser.add_argument("--lmax", action="store", dest="lmax",
         default=1000, type=int)
     parser.add_argument("--mmax", action="store", dest="mmax",
@@ -970,7 +969,7 @@ def main():
     parser.add_argument("--seed", action="store", dest="seed", type=float,
         default=25)
     parser.add_argument("--el0", action="store", dest="el0", type=float,
-        default=50., help="Starting elevation (ballon scan)")
+        default=35., help="Starting elevation (ballon scan)")
     parser.add_argument("--az0", action="store", dest="az0", type=float,
         default=0., help="Starting azimuth, balloon scan")
     parser.add_argument("--sun_angle", action="store", dest="sun_angle", 
@@ -994,7 +993,7 @@ def main():
     parser.add_argument("--no_pairs", action="store_true", dest="no_pairs",
         default=False)
     parser.add_argument("--ab_diff", action="store", dest="ab_diff", 
-        default=90., type=float, help="polang between a and b within a pair")
+        default=45., type=float, help="polang between a and b within a pair")
     parser.add_argument("--killfrac", action="store", dest="killfrac",
         default=0., type=float, help="Randomly kill fraction of beams")
 
@@ -1112,8 +1111,8 @@ def main():
                         mmax=args.mmax,
                         add_ghosts=args.add_ghosts,
                         ghost_amp=args.ghost_amp,
-                        point_error_mode = args.point_error_mode,
-                        point_error=args.point_error,
+                        point_bias_mode = args.point_bias_mode,
+                        point_bias=args.point_bias,
                         el0 = args.el0,
                         az0 = args.az0,
                         sun_angle = args.sun_angle,
