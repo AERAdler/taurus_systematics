@@ -415,13 +415,17 @@ def run_sim(simname, sky_alm,
         #Find start index of each night
         night_starts = np.argwhere(ctime[1:]-ctime[:-1]>2*sample_rate)
         night_starts = night_starts.flatten()+1
-        num_nights = night_starts.shape + 1
-        for startidx in night_starts:
+        night_starts = np.concatenate(([0], night_starts))
+        for i, startidx in enumerate(night_starts):
             #Night start time, position, altitude
             lat_n = lat[startidx]
             lon_n = lon[startidx]
             c0_n  = ctime[startidx]
-            ctime_n = ???????#HELP
+            if i==len(night_starts)-1:
+                ctime_n = ctime[startidx:]
+            else:
+                ctime_n = ctime[startidx:night_starts[i+1]]
+            nsamp_night = len(ctime_n)            
             h = 35000+200*np.random.normal()
             ymd = datetime.date.fromtimestamp(c0_n).strftime("%Y%m%d")
             passct_n_kwargs = dict(ctime=ctime_n)
