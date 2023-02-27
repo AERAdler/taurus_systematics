@@ -167,8 +167,6 @@ def balloon_night_ctime(**kwargs):
     gondola.elevation = h
 
     for i in range(0, nsamp, int(sample_rate)):
-        if (i%int(3600*24*sample_rate)==0):
-            print(int(i/3600/24/sample_rate), rank)
         #PyEphem calculation of sunset and sunrise
         gondola.lat = ephem.degrees(np.radians(lat[i]))
         gondola.lon = ephem.degrees(np.radians(lon[i]))
@@ -348,7 +346,7 @@ def run_sim(simname, sky_alm,
                          sensitive_freq=freq, deconv_q=deconv_q)
         nfloor = int(np.floor(np.sqrt(npairs)))
         if btype=="PO":
-            beam_opts["po_file"] = beam_files#It"s just one file here
+            beam_opts["po_file"] = opj(beamdir, beam_files)#It"s just one file here
         scan.create_focal_plane(nrow=nfloor, ncol=nfloor, fov=fov, 
                                 ab_diff=ab_diff, **beam_opts)
 
@@ -777,6 +775,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
 
     filename = "maps_"+sim_tag+".fits"
     fstrs = ["TT", "EE", "BB", "TE", "TB", "EB"]
+    spectra_dir = opj(analyzis_dir, "spectra")
     maps = tools.read_map(opj(analyzis_dir, filename), field=None, fill=np.nan)
     hits = tools.read_map(opj(analyzis_dir, filename.replace("maps_", "hits_")))
     cond = tools.read_map(opj(analyzis_dir, filename.replace("maps_", "cond_")))
@@ -820,8 +819,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     cl = tools.spice(maps, mask=mask, **spice_opts2use)
     bl = hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)
     cl = cl/bl**2
-    np.save(opj(analyzis_dir, "spectra", 
-            "{}_spectra.npy".format(sim_tag)), cl)
+    np.save(opj(spectra_dir, "{}_spectra.npy".format(sim_tag)), cl)
 
     
     #Versus ideal
@@ -853,9 +851,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             diffi[mask[:]==0] = 0.
         diff_ideal_cl = tools.spice(diff_ideal, mask=mask, **spice_opts2use)
         diff_ideal_cl = diff_ideal_cl/bl**2
-        np.save(opj(analyzis_dir, "spectra", 
-            "{}_diff_ideal_spectra_cal{}.npy".format(sim_tag, fstrs[cal])),
-            diff_ideal_cl)
+        if cal is not None:
+            np.save(opj(spectra_dir, "{}_diff_ideal_spectra_cal{}.npy".format(
+                 sim_tag, fstrs[cal])), diff_ideal_cl)
+        else:
+            np.save(opj(spectra_dir, "{}_diff_ideal_spectra_nocal.npy".format(
+                 sim_tag)), diff_ideal_cl)
 
     #Versus input
     if input_map:
@@ -884,9 +885,12 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
             diffi[~mask] = np.nan
         diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
         diff_input_cl = diff_input_cl/bl**2
-        np.save(opj(analyzis_dir, "spectra", 
-            "{}_diff_input_spectra_cal.npy".format(sim_tag, fstrs[cal])), 
-            diff_input_cl)
+        if cal is not None:
+            np.save(opj(spectra_dir, "{}_diff_input_spectra_cal{}.npy".format(
+                 sim_tag, fstrs[cal])), diff_input_cl)
+        else:
+            np.save(opj(spectra_dir, "{}_diff_input_spectra_nocal.npy".format(
+                 sim_tag)), diff_input_cl)
 
     if not plot:
         return 
@@ -1208,8 +1212,8 @@ def main():
             nside_out = args.nside_out, 
             lmax = 400,
             fwhm = args.fwhm, 
-            l1 = 100, 
-            l2 = 300,
+            l1 = 50, 
+            l2 = 100,
             plot = args.plot,
             label = args.label)
 
