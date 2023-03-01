@@ -409,29 +409,34 @@ def run_sim(simname, sky_alm,
         """
         #Create empty sky alms and empty ground signal map
         empty_sky = np.zeros((3,hp.Alm.getsize(lmax)), dtype=complex)
-        ground_maps = np.zeros((3, nside))
+        ground_maps = np.zeros((3, 12*nside_out**2))
         #Find start index of each night
         night_starts = np.argwhere(ctime[1:]-ctime[:-1]>2*sample_rate)
         night_starts = night_starts.flatten()+1
         night_starts = np.concatenate(([0], night_starts))
         for i, startidx in enumerate(night_starts):
             #Night start time, position, altitude
-            lat_n = lat[startidx]
-            lon_n = lon[startidx]
+            lat0_n = lat[startidx]
+            lon0_n = lon[startidx]
             c0_n  = ctime[startidx]
             if i==len(night_starts)-1:
                 ctime_n = ctime[startidx:]
+                lat_n = lat[startidx:]
+                lon_n = lon[startidx:]
             else:
                 ctime_n = ctime[startidx:night_starts[i+1]]
+                lat_n = lat[startidx:night_starts[i+1]]
+                lon_n = lon[startidx:night_starts[i+1]]
             nsamp_night = len(ctime_n)            
             h = 35000+200*np.random.normal()
-            ymd = datetime.date.fromtimestamp(c0_n).strftime("%Y%m%d")
+            yd = date.fromtimestamp(c0_n).strftime("%Y%j")
             passct_n_kwargs = dict(ctime=ctime_n)
             if rank==0:
+                print("Projecting ground, night:{}".format(i))
                 #Project ground to telescope frame
                 world_map = hp.read_map(opj(basedir,"ground_input",
-                            "SSMIS","SSMIS-{}-91H.fits".format(ymd)))
-                ground_template = template_from_position(world_map,lat_n,lon_n, 
+                            "SSMIS","SSMIS-{}-91H_South.fits".format(yd)))
+                ground_template = template_from_position(world_map,lat0_n,lon0_n, 
                     h, nside_out=4096, cmb=False, freq=freq, frac_bwidth=.2)
                 ground_alm = hp.map2alm([ground_template, 
                                     np.zeros_like(ground_template), 
@@ -447,7 +452,8 @@ def run_sim(simname, sky_alm,
                 num_samples=nsamp_night, external_pointing=True, 
                 ctime0=c0_n, lat=lat_n, lon=lon_n)
             scan_ground_opts = scan_opts.copy()
-            scan_ground_opts["ctime_kwargs"]= passct_n_kwargs
+            scan_ground_opts["ctime_kwargs"] = passct_n_kwargs
+            scan_ground_opts["q_bore_kwargs"]["ground"] = True
             if create_fpu:#A square focal plane
                 scan_ground.create_focal_plane(nrow=nfloor, ncol=nfloor, 
                     fov=fov, ab_diff=ab_diff, **beam_opts)
@@ -501,11 +507,13 @@ def run_sim(simname, sky_alm,
 
             scan_ground.scan_instrument_mpi(empty_sky, ground_alm=ground_alm, 
                                             **scan_ground_opts)
-            night_ground, _ = scan_ground.solve_for_map()
-            ground_maps += night_ground/num_nights 
-
+            night_ground, _ = scan_ground.solve_for_map(fill=0.)
+            if scan_ground.mpi_rank==0:
+                ground_maps += night_ground 
+            
         #add to sky map
-        maps = maps+ground_maps    
+        if scan_ground.mpi_rank==0:
+            maps = maps+ground_maps 
 
 
     if scan.mpi_rank==0:
