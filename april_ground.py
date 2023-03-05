@@ -16,7 +16,7 @@ example = satname+"2015085-91H-E-SIR-CSU-v1.3.nc"
 nside = 512
 
 #De-projection
-data_for_proj = Dataset(example, "r", format="NETCDF4")
+data_for_proj = Dataset(opj(folder, example), "r", format="NETCDF4")
 X = np.array(data_for_proj["x"])
 Y = np.array(data_for_proj["y"])
 XX, YY = np.meshgrid(X, Y)
@@ -30,7 +30,7 @@ lon = np.arctan2(XX,YY) - np.pi
 pixes = hp.ang2pix(nside, lat, lon)
 
 #Iterate over month
-for i in range(31):
+for i in range(34):
     day = str(dates[i]).zfill(3)
     file_mor = satname+"2015{}-91H-M-SIR-CSU-v1.3.nc".format(day)
     data_mor = Dataset(opj(folder, file_mor), "r", format="NETCDF4")
