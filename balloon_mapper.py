@@ -327,12 +327,10 @@ def run_sim(simname, sky_alm,
     print("Rank {} computed lon, lat, ctime".format(rank))
     night_samps = len(ctime)
     passct_kwargs = dict(ctime=ctime)
-    
     scan = ScanStrategy(sample_rate=sample_rate, num_samples=night_samps, 
                 external_pointing=True, ctime0=ctime0, lat=lat, lon=lon)
-    scan_opts = dict(scan_speed=30., ###
-                     q_bore_func=scan.balloon_night_qbore, 
-                     q_bore_kwargs=dict(el0=el0, az0=az0),
+    scan_opts = dict(q_bore_func=scan.balloon_night_qbore, 
+                     q_bore_kwargs=dict(el0=el0, az0=az0, scan_speed=30.),
                      ctime_func=pass_ctime,
                      ctime_kwargs=passct_kwargs,
                      max_spin=2,
@@ -419,6 +417,7 @@ def run_sim(simname, sky_alm,
             lat0_n = lat[startidx]
             lon0_n = lon[startidx]
             c0_n  = ctime[startidx]
+            print(lat0_n, lon0_n, c0_n)
             if i==len(night_starts)-1:
                 ctime_n = ctime[startidx:]
                 lat_n = lat[startidx:]
@@ -437,7 +436,7 @@ def run_sim(simname, sky_alm,
                 world_map = hp.read_map(opj(basedir,"ground_input",
                             "SSMIS","SSMIS-{}-91H_South.fits".format(yd)))
                 ground_template = template_from_position(world_map,lat0_n,lon0_n, 
-                    h, nside_out=4096, cmb=False, freq=freq, frac_bwidth=.2)
+                    h, nside_out=4096, cmb=True, freq=freq, frac_bwidth=.2)
                 ground_alm = hp.map2alm([ground_template, 
                                     np.zeros_like(ground_template), 
                                     np.zeros_like(ground_template)], 
@@ -500,17 +499,17 @@ def run_sim(simname, sky_alm,
                 hwpf = hstepf
             elif hwp_mode == "continuous":
                 hwpf = hfreq   
-            scan.set_hwp_mod(mode=hwp_mode, freq=hwpf, varphi=varphi)
+            scan_ground.set_hwp_mod(mode=hwp_mode, freq=hwpf, varphi=varphi)
             
             if filter_highpass and (w_c is not None):
-                scan.set_filter_dict(w_c, m=filter_m)
+                scan_ground.set_filter_dict(w_c, m=filter_m)
 
             scan_ground.scan_instrument_mpi(empty_sky, ground_alm=ground_alm, 
                                             **scan_ground_opts)
             night_ground, _ = scan_ground.solve_for_map(fill=0.)
             if scan_ground.mpi_rank==0:
                 ground_maps += night_ground 
-            
+
         #add to sky map
         if scan_ground.mpi_rank==0:
             maps = maps+ground_maps 
