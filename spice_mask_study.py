@@ -11,12 +11,13 @@ nside=256
 lmax=700
 #ell, TT, TE, EE, BB, PP
 spp = np.loadtxt("planckCOMr3_spectra.txt", unpack=True)
-ell = spp[:,0]
+ell = spp[0,:]
 cl = np.zeros((4,lmax))
-cl[0,1:] = spp[:lmax, 1]#TT
-cl[1,1:] = spp[:lmax, 3]#EE
-cl[2,1:] = spp[:lmax, 4]#BB
-cl[3,1:] = spp[:lmax, 2]#TE
+#Change order to match spice output, let mono and dipole be zero
+cl[0,2:] = spp[1,:lmax-2]#TT
+cl[1,2:] = spp[3,:lmax-2]#EE
+cl[2,2:] = spp[4,:lmax-2]#BB
+cl[3,2:] = spp[2,:lmax-2]#TE
 
 ell = ell[:lmax]
 cl = cl*2*np.pi/(ell*(ell+1))#Go from dl to cl
@@ -64,7 +65,7 @@ spice_opts= get_default_spice_opts(lmax-1, fsky)
 #Skip spice steps if you already have your array
 
 #Output Cl arrays
-spice_cl = np.zeros((100, 6, lmax+1))
+spice_cl = np.zeros((100, 6, lmax))
 for i in range(100):
     np.random.seed(i)
     inmap = hp.synfast(cl, nside=nside, new=True)
@@ -75,16 +76,15 @@ np.save("spice_cl.npy", spice_cl)
 spice_cl = np.load("spice_cl.npy")
 
 spice_cl.sort(axis=0)
-spice_fl = np.zeros((100, 6, 20))
+spice_fl = np.zeros((100, 4, 20))
 for i in range(100):
-    spice_fl[i]=spice_cl[i,:,:20]/cl[:,:20]
+    spice_fl[i]=spice_cl[i,:4,:20]/cl[:,:20]
 
 spice_1s = np.array([spice_fl[49] - spice_fl[15], spice_fl[83] - spice_fl[49]])
 
 comp=["TT", "EE", "BB", "TE"]
-fig, axs = plt.subplots(2,2, sharex=True, sharey=True, figsize=(8,5))
-axs[0,0].set_xlim(2,20)
-axs[0,0].set_ylim(0,2)
+fig, axs = plt.subplots(2,2, sharex=True, figsize=(8,5))
+axs[0,0].set_xlim(3,20)
 fig.text(0.07, 0.5, r"$F_\ell^{XY}$", rotation="vertical", fontsize=12)
 fig.text(0.5, 0.02, r"Multipole $\ell$", fontsize=12)
 for j, ax in enumerate(axs.flat):
@@ -94,10 +94,13 @@ for j, ax in enumerate(axs.flat):
         linestyle="none", marker=".", label="68%")
     ax.plot(ell[:20], spice_fl[2,j], ls="none", marker="x", color="tab:blue", label="95%")
     ax.plot(ell[:20], spice_fl[97,j],ls="none", marker="x", color="tab:blue")
-
-axs[1,2].legend(frameon=False)
+axs[0,0].set_ylim(0,2)
+axs[0,1].set_ylim(0,4)
+axs[1,0].set_ylim(-200,200)
+axs[1,1].set_ylim(0,3)
+axs[1,1].legend(frameon=False)
 fig.suptitle(r"Transfer function for input best-fit Planck spectrum")
-fig.tight_layout()
+#fig.tight_layout()
 plt.savefig("transfer_function.png", dpi=200)
 
 
