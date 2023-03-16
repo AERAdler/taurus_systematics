@@ -1,5 +1,6 @@
 import healpy as hp
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 import numpy as np
 from beamconv import tools
 import pipeline_tools
@@ -11,7 +12,7 @@ nside=256
 lmax=700
 #ell, TT, TE, EE, BB, PP
 spp = np.loadtxt("planckCOMr3_spectra.txt", unpack=True)
-ell = spp[0,:]
+ell = np.arange(lmax)
 cl = np.zeros((4,lmax))
 #Change order to match spice output, let mono and dipole be zero
 cl[0,2:] = spp[1,:lmax-2]#TT
@@ -19,7 +20,6 @@ cl[1,2:] = spp[3,:lmax-2]#EE
 cl[2,2:] = spp[4,:lmax-2]#BB
 cl[3,2:] = spp[2,:lmax-2]#TE
 
-ell = ell[:lmax]
 cl = cl*2*np.pi/(ell*(ell+1))#Go from dl to cl
 
 #Spice options
@@ -40,6 +40,7 @@ def get_default_spice_opts(lmax=700, fsky=None):
         subdipole=True)
 
     return spice_opts
+"""
 #Create a mask we can use for a spectrum estimation
 #It is the union of:
 #1 A Planck-like 70% mask 
@@ -72,32 +73,60 @@ for i in range(100):
     spice_cl[i] = pipeline_tools.spice(inmap, mask=gal_mask, **spice_opts)
 
 np.save("spice_cl.npy", spice_cl)
-
+"""
 spice_cl = np.load("spice_cl.npy")
 
 spice_cl.sort(axis=0)
-spice_fl = np.zeros((100, 4, 20))
+spice_fl = np.zeros((100, 4, 200))
 for i in range(100):
-    spice_fl[i]=spice_cl[i,:4,:20]/cl[:,:20]
+    spice_fl[i]=spice_cl[i,:4,:200]/cl[:,:200]
 
-spice_1s = np.array([spice_fl[49] - spice_fl[15], spice_fl[83] - spice_fl[49]])
+spice_1s = np.abs([spice_fl[49] - spice_fl[15], spice_fl[83] - spice_fl[49]])
 
 comp=["TT", "EE", "BB", "TE"]
-fig, axs = plt.subplots(2,2, sharex=True, figsize=(8,5))
-axs[0,0].set_xlim(3,20)
-fig.text(0.07, 0.5, r"$F_\ell^{XY}$", rotation="vertical", fontsize=12)
-fig.text(0.5, 0.02, r"Multipole $\ell$", fontsize=12)
-for j, ax in enumerate(axs.flat):
+
+twosigdict = dict(linestyle="none", marker="x", color="tab:blue")
+onesigdict = dict(linestyle="none", marker=".", color="tab:blue",)
+fig, axs = plt.subplots(2,2, sharex=True, figsize=(11,5))
+print(ell[19])
+plot_order = [0,3,1,2]
+fig.text(0.45, 0.02, r"Multipole $\ell$", fontsize=12)
+for k, ax in enumerate(axs.flat):
+    j = plot_order[k]#I want TT,TE,EE,BB as plot order
+    ax.set_xlim(3,20)
+    ax.set_ylim(0,2.5)
+    if j==2:
+        ax.set_ylim(-59,61)
     ax.set_title(comp[j])
+    ax.set_ylabel(r"$F_\ell^{{{}}}$".format(comp[j]))
     ax.plot(ell[:20], np.ones(20), "k--")
-    ax.errorbar(ell[:20], spice_fl[49, j], yerr=spice_1s[:,j,:], color="tab:blue",
-        linestyle="none", marker=".", label="68%")
-    ax.plot(ell[:20], spice_fl[2,j], ls="none", marker="x", color="tab:blue", label="95%")
-    ax.plot(ell[:20], spice_fl[97,j],ls="none", marker="x", color="tab:blue")
-axs[0,0].set_ylim(0,2)
-axs[0,1].set_ylim(0,4)
-axs[1,0].set_ylim(-200,200)
-axs[1,1].set_ylim(0,3)
+    ax.errorbar(ell[:20], spice_fl[49, j, :20], yerr=spice_1s[:,j,:20], 
+        label="68%", **onesigdict)
+    ax.plot(ell[:20], spice_fl[2,j,:20], label="95%", **twosigdict)
+    ax.plot(ell[:20], spice_fl[97,j,:20], **twosigdict)
+    ax.spines["right"].set_visible(False)
+    divider = make_axes_locatable(ax)
+    axLin = divider.append_axes("right", size=1.0, pad=0)
+    axLin.set_xlim((20, 200))
+    axLin.errorbar(ell[31:200:20], spice_fl[49, j,31::20], yerr=spice_1s[:,j,25::20], 
+        label="68%", **onesigdict)
+    axLin.plot(ell[31:200:20], spice_fl[2,j,31::20], **twosigdict)
+    axLin.plot(ell[31:200:20], spice_fl[97,j,35::20], **twosigdict)
+    axLin.plot(ell[20:], np.ones(680), "k--")
+    axLin.spines["left"].set_visible(False)
+    axLin.yaxis.set_ticks_position("right")
+    axLin.set_ylim(0,2.5)
+
+    if j==2:
+        axLin.set_ylim(0,2)
+    else:
+        plt.setp(axLin.get_yticklabels(), visible=False)
+
+
+#
+#axs[0,1].set_ylim(0,4)
+#axs[1,0].set_ylim(-200,200)
+#axs[1,1].set_ylim(0,3)
 axs[1,1].legend(frameon=False)
 fig.suptitle(r"Transfer function for input best-fit Planck spectrum")
 #fig.tight_layout()
