@@ -20,7 +20,7 @@ cl[1,2:] = spp[3,:lmax-2]#EE
 cl[2,2:] = spp[4,:lmax-2]#BB
 cl[3,2:] = spp[2,:lmax-2]#TE
 
-cl = cl*2*np.pi/(ell*(ell+1))#Go from dl to cl
+cl[:,2:] = cl[:,2:]*2*np.pi/(ell[2:]*(ell[2:]+1))#Go from dl to cl
 
 #Spice options
 def get_default_spice_opts(lmax=700, fsky=None):
@@ -40,7 +40,7 @@ def get_default_spice_opts(lmax=700, fsky=None):
         subdipole=True)
 
     return spice_opts
-"""
+
 #Create a mask we can use for a spectrum estimation
 #It is the union of:
 #1 A Planck-like 70% mask 
@@ -73,7 +73,7 @@ for i in range(100):
     spice_cl[i] = pipeline_tools.spice(inmap, mask=gal_mask, **spice_opts)
 
 np.save("spice_cl.npy", spice_cl)
-"""
+
 spice_cl = np.load("spice_cl.npy")
 
 spice_cl.sort(axis=0)
@@ -88,46 +88,51 @@ comp=["TT", "EE", "BB", "TE"]
 twosigdict = dict(linestyle="none", marker="x", color="tab:blue")
 onesigdict = dict(linestyle="none", marker=".", color="tab:blue",)
 fig, axs = plt.subplots(2,2, sharex=True, figsize=(11,5))
-print(ell[19])
 plot_order = [0,3,1,2]
 fig.text(0.45, 0.02, r"Multipole $\ell$", fontsize=12)
 for k, ax in enumerate(axs.flat):
     j = plot_order[k]#I want TT,TE,EE,BB as plot order
-    ax.set_xlim(3,20)
-    ax.set_ylim(0,2.5)
+    ax.set_xlim(2.5,20)
+    ax.set_ylim(0,4)
     if j==2:
-        ax.set_ylim(-59,61)
-    ax.set_title(comp[j])
+        ax.set_ylim(-149,151)
+    #ax.set_title(comp[j])
     ax.set_ylabel(r"$F_\ell^{{{}}}$".format(comp[j]))
     ax.plot(ell[:20], np.ones(20), "k--")
     ax.errorbar(ell[:20], spice_fl[49, j, :20], yerr=spice_1s[:,j,:20], 
         label="68%", **onesigdict)
     ax.plot(ell[:20], spice_fl[2,j,:20], label="95%", **twosigdict)
     ax.plot(ell[:20], spice_fl[97,j,:20], **twosigdict)
+
     ax.spines["right"].set_visible(False)
     divider = make_axes_locatable(ax)
     axLin = divider.append_axes("right", size=1.0, pad=0)
     axLin.set_xlim((20, 200))
-    axLin.errorbar(ell[31:200:20], spice_fl[49, j,31::20], yerr=spice_1s[:,j,25::20], 
+
+    fl_mid_bin = np.average(spice_fl[49,j,20:].reshape((9,20)), axis=1)
+    fl_low_twostd = np.average(spice_fl[2,j,20:].reshape((9,20)), axis=1)
+    fl_high_twostd = np.average(spice_fl[97,j,20:].reshape((9,20)), axis=1)
+    low_onestd = np.average((spice_fl[49,j,20:] 
+                                - spice_fl[15, j, 20:]).reshape(9,20), axis=1)
+    high_onestd = np.average((spice_fl[83,j,20:] 
+                                - spice_fl[49, j, 20:]).reshape(9,20), axis=1)
+    binned_1s = np.abs([low_onestd, high_onestd])
+    axLin.errorbar(ell[30:200:20], fl_mid_bin, yerr=binned_1s, 
         label="68%", **onesigdict)
-    axLin.plot(ell[31:200:20], spice_fl[2,j,31::20], **twosigdict)
-    axLin.plot(ell[31:200:20], spice_fl[97,j,35::20], **twosigdict)
+    axLin.plot(ell[30:200:20], fl_low_twostd, **twosigdict)
+    axLin.plot(ell[30:200:20], fl_high_twostd, **twosigdict)
     axLin.plot(ell[20:], np.ones(680), "k--")
     axLin.spines["left"].set_visible(False)
     axLin.yaxis.set_ticks_position("right")
-    axLin.set_ylim(0,2.5)
+    axLin.set_ylim(0,4)
 
     if j==2:
         axLin.set_ylim(0,2)
+        ax.set_ylabel(r"$F_\ell^{{{}}}$".format(comp[j]) ,labelpad=-17)
     else:
         plt.setp(axLin.get_yticklabels(), visible=False)
 
-
-#
-#axs[0,1].set_ylim(0,4)
-#axs[1,0].set_ylim(-200,200)
-#axs[1,1].set_ylim(0,3)
-axs[1,1].legend(frameon=False)
+axs[0,0].legend(frameon=False)
 fig.suptitle(r"Transfer function for input best-fit Planck spectrum")
 #fig.tight_layout()
 plt.savefig("transfer_function.png", dpi=200)
