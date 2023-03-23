@@ -362,6 +362,10 @@ def run_sim(simname, sky_alm,
                        el_bias=pbdeg[1], polang_bias=pbdeg[2])) 
         else:
             raise ValueError("Unknown pointing error mode")
+    if add_ghosts:
+        ghost_dict = dict(amplitude=ghost_amp)
+        scan.create_reflected_ghosts(ghost_tag='refl_ghost',
+                                rand_stdev=0., **ghost_dict)
     if hwp_model == "ideal":
         pass
     elif "band" in hwp_model:
