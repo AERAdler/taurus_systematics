@@ -594,16 +594,18 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
         print("Rank = {:03d} | bidx = {:03d} | filename = {}".\
             format(sat.mpi_rank, bidx, beam_file))
         if no_pairs:
-            parse_single_det(beamdir, beam_file, lmax, stitch_wide, plot)
+            parse_single_det(beamdir, beam_file, lmax=lmax, 
+                             stitch_wide=stitch_wide, plot=plot)
             prop_file = open(opj(beamdir, beam_file+"_prop.pkl"), "rb")
             prop = pickle.load(prop_file)
             prop_file.close()
 
         else:
             for det in ["A","B"]:
-                detname =  beam_file+"_{}".format(det)
-                parse_single_det(beamdir, detname, lmax, stitch_wide, plot)
-                prop_file = open(opj(beamdir, detname+"_prop.pkl"), "rb")
+                detname = beam_file+"_{}".format(det)
+                parse_single_det(beamdir, beam_file, lmax=lmax, 
+                                 det=det, stitch_wide=stitch_wide, plot=plot)
+                prop_file = open(opj(beamdir, beam_file+"_prop.pkl"), "rb")
                 prop = pickle.load(prop_file)
                 prop_file.close()
 
@@ -632,7 +634,8 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
 
     sat.barrier()
 
-def parse_single_det(beamdir, detname, lmax=2000, stitch_wide=False, plot=False):
+def parse_single_det(beamdir, beam_file, lmax=2000, det=None, 
+                     stitch_wide=False, plot=False):
     """
     Load GRASP output, convert into blms and save.
 
@@ -642,13 +645,15 @@ def parse_single_det(beamdir, detname, lmax=2000, stitch_wide=False, plot=False)
         Path to beam directory where .npy and .pkl beam files
         will be stored, and where grasp files are located.
         Filenames will be equal to input.
-    detname: str
-        Name of specific detector to sample within beamdir
+    beam_file: str
+        Name of specific beam to sample within beamdir
 
     Keyword Arguments
     -----------------
     lmax : int
         lmax for blms (default : 2000)
+    det : str
+        Name of detector in beam pair (default : None)
     stitch_wide : bool
         Whether to add a sidelobe (from the pickle file) to the main beam
         (default: False)
@@ -665,10 +670,10 @@ def parse_single_det(beamdir, detname, lmax=2000, stitch_wide=False, plot=False)
     apodize = True # Note, apodize doesnt apply in case of sidelobes
     lmax_big = 2000
 
-    pk_file = open(opj(beamdir, detname+"_fields.pkl"), "rb")
+    pk_file = open(opj(beamdir, beam_file+"_fields.pkl"), "rb")
     peak_fields = pickle.load(pk_file)
     pk_file.close()
-    prop_file = open(opj(beamdir, detname+"_prop.pkl"), "rb")
+    prop_file = open(opj(beamdir, beam_file+"_prop.pkl"), "rb")
     prop = pickle.load(prop_file)
     prop_file.close()
     e_co = peak_fields["e_co"]
@@ -686,11 +691,11 @@ def parse_single_det(beamdir, detname, lmax=2000, stitch_wide=False, plot=False)
     d_el = cr[3] - cr[1]
 
     if stitch_wide:
-        wide_detname= detname.replace("grid", "grid_wide") 
-        wd_file = open(opj(beamdir, 
-            wide_detname+"_fields.pkl"), "rb")
-        wide_fields = pickle.load(wd_file)
-        wd_file.close()
+        wide_beam_file= beam_file.replace("grid", "grid_wide") 
+        wb_file = open(opj(beamdir, 
+            wide_beam_file+"_fields.pkl"), "rb")
+        wide_fields = pickle.load(wb_file)
+        wb_file.close()
         e_co_wide = wide_fields["e_co"]
         e_cx_wide = wide_fields["e_cx"]
         if invert_flag:
@@ -721,12 +726,12 @@ def parse_single_det(beamdir, detname, lmax=2000, stitch_wide=False, plot=False)
         maxU = np.amax(stokes[2])
         hp.orthview(10*np.log10(stokes[0]), rot=[0,90,0], half_sky=True,
                max=maxI, min=maxI-80.)
-        plt.savefig(opj(beamdir, detname+"_I.png") ,dpi=1000)
+        plt.savefig(opj(beamdir, beam_file+"_I.png") ,dpi=1000)
         hp.orthview(stokes[1], rot=[0,90,0], half_sky=True)
-        plt.savefig(opj(beamdir, detname+"_Q.png") ,dpi=1000)
+        plt.savefig(opj(beamdir, beam_file+"_Q.png") ,dpi=1000)
         hp.orthview(stokes[2], rot=[0,90,0], half_sky=True)
-        plt.savefig(opj(beamdir, detname+"_U.png") ,dpi=1000)
-        hp.write_map(opj(beamdir, detname+"_Stokes.fits"), stokes)
+        plt.savefig(opj(beamdir, beam_file+"_U.png") ,dpi=1000)
+        hp.write_map(opj(beamdir, beam_file+"_Stokes.fits"), stokes)
 
     blm_stokes = hp.map2alm(stokes, lmax_big, pol=False)
     blm_stokes = beam_tools.trunc_alm(blm_stokes, lmax_new=lmax)
@@ -735,7 +740,7 @@ def parse_single_det(beamdir, detname, lmax=2000, stitch_wide=False, plot=False)
     blm = np.array([blm, blmm2, blmp2], dtype=np.complex128)
 
     # save npy file
-    po_file = opj(beamdir, detname+".npy")
+    po_file = opj(beamdir, beam_file+det+".npy")
     np.save(po_file, blm)
     return 
 
@@ -1011,8 +1016,8 @@ def main():
         default=150, type=float, help="Beam frequency")
     parser.add_argument("--add_ghosts", action="store_true", dest="add_ghosts",
         default=False)
-    parser.add_argument("--ghost_amp", action="store_true", dest="ghost_amp",
-        default=False)
+    parser.add_argument("--ghost_amp", action="store", dest="ghost_amp",
+        default=0.01, type=float)
     parser.add_argument("--point_bias_mode", type=int, action="store",
         default=0, dest="point_bias_mode", help="Pointing bias mode: [0,1,2]")
     parser.add_argument("--point_bias", action="store", dest="point_bias", 
