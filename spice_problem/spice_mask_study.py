@@ -12,7 +12,32 @@ import xqml
 from xqml.xqml_utils import getstokes
 from xqml.simulation import extrapolpixwin, Karcmin2var
 
-nside = 16
+def cv(ell, cl, fsky):
+    return 2./(2*ell+1)/fsky*cl
+
+
+#Spice options
+def get_default_spice_opts(lmax=700, fsky=None):
+
+    if fsky is None:
+        fsky = 1.0
+
+    spice_opts = dict(nlmax=lmax,
+        apodizetype=1,
+        apodizesigma=180*fsky*0.8,
+        thetamax=180*fsky,
+        decouple=False,
+        symmetric_cl=True,
+        outroot=os.path.realpath(__file__),
+        verbose=0,
+        subav=False,
+        subdipole=True,
+        return_kernel=True)
+
+    return spice_opts
+
+
+nside = 8
 lmax = 3 * nside - 1
 
 #ell, TT, TE, EE, BB, PP
@@ -26,25 +51,6 @@ cl[1,2:] = dl_th[3,:lmax-2]/dfac[2:lmax]#EE
 cl[2,2:] = dl_th[4,:lmax-2]/dfac[2:lmax]#BB
 cl[3,2:] = dl_th[2,:lmax-2]/dfac[2:lmax]#TE
 
-#Spice options
-def get_default_spice_opts(lmax=700, fsky=None):
-
-    if fsky is None:
-        fsky = 1.0
-
-    spice_opts = dict(nlmax=lmax,
-        apodizetype=1,
-        apodizesigma=180*fsky*0.8,
-        thetamax=180*fsky,
-        decouple=True,
-        symmetric_cl=True,
-        outroot=os.path.realpath(__file__),
-        verbose=0,
-        subav=False,
-        subdipole=True,
-        return_kernel=True)
-
-    return spice_opts
 
 #Create a mask we can use for a spectrum estimation
 #It is the union of:
@@ -93,7 +99,7 @@ nstoke = len(stokes)
 pixvar = Karcmin2var(muKarcmin*1e-6, nside)
 xqml_mask = np.ones(12*nside*nside, dtype=bool)
 xqml_mask[mask<0.1] = False
-xqml_pix = np.sum(xqml_mask)#I don't get it at all
+xqml_pix = np.sum(xqml_mask)#I don't get it 
 xqml_fsky = np.mean(xqml_mask)
 varmap = np.ones((nstoke * xqml_pix)) * pixvar *0.
 NoiseVar = np.diag(varmap)
@@ -105,7 +111,7 @@ lb = bins.lbin
 #Output Cl arrays
 spice_cl = np.zeros((100, 6, lmax+1))
 xqml_cl = np.zeros((100, 4, lmax+1))
-"""
+
 for i in range(100):
     np.random.seed(i)
     inmap = hp.synfast(cl, nside=nside, new=True)
@@ -115,12 +121,12 @@ for i in range(100):
     xqml_map_a = xqml_map + np.random.randn(nstoke, xqml_pix) * np.sqrt(pixvar)
     xqml_map_b = xqml_map + np.random.randn(nstoke, xqml_pix) * np.sqrt(pixvar)
     xqml_cl[i,:,2:] = np.array(esti.get_spectra(xqml_map_a))
-np.save("spice_taumask_kernel.npy", kernel)
-np.save("spice_cl.npy", spice_cl)
-np.save("xqml_cl.npy", xqml_cl)
-"""
-spice_cl = np.load("spice_cl.npy")
-#kernel = np.load("spice_taumask_kernel.npy")
+np.save("spice_taumask_kernel_couple.npy", kernel)
+np.save("spice_cl_couple.npy", spice_cl)
+np.save("xqml_cl_couple.npy", xqml_cl)
+
+spice_cl = np.load("spice_cl_couple.npy")
+#kernel = np.load("spice_taumask_kernel_couple.npy")
 #square_kernel = kernel[:,2:lmax+1,2:lmax+1]
 #for i in range(100):
 #    spice_cl[i,0,2:] = np.linalg.inv(square_kernel[0])@spice_cl[i,0,2:]
@@ -137,7 +143,7 @@ for i in range(100):
 spice_fl1s = np.abs([spice_fl[49] - spice_fl[15], spice_fl[83] - spice_fl[49]])
 
 
-xqml_cl = np.load("xqml_cl.npy")
+xqml_cl = np.load("xqml_cl_couple.npy")
 xqml_cl.sort(axis=0)
 xqml_cl1s = np.abs([xqml_cl[49] - xqml_cl[15], xqml_cl[83] - xqml_cl[49]])
 
@@ -158,10 +164,13 @@ for k, ax in enumerate(axs1.flat):
     j = plot_order[k]#I want TT,TE,EE,BB as plot order
     ax.set_xlim(0.,23)
     ax.set_ylabel(r"$D_\ell^{{{}}}$".format(comp[j]))
-    ax.plot(ell, dfac*cl_full[j], "k--")
-    ax.errorbar(ell[:lmax+1], dfac[:lmax+1]*spice_cl[49, j], 
+    ax.plot(ell, dfac*cl_full[j], "k--", label="Planck best-fit spectrum")
+    cstd = cv(ell, cl_full[j], fsky)
+    ax.plot(ell, dfac*(cl_full[j]+cstd), ls=":", color="tab:purple", label="Cosmic variance")
+    ax.plot(ell, dfac*(cl_full[j]-cstd), ls=":", color="tab:purple")
+    ax.errorbar(ell[:lmax+1]+0.05, dfac[:lmax+1]*spice_cl[49, j], 
         yerr=dfac[:lmax+1]*spice_cl1s[:,j], marker=".", **polspicedict)
-    ax.errorbar(lb, lb*(lb+1)/(2*np.pi)*xqml_cl[49, j, 2:], 
+    ax.errorbar(lb-0.05, lb*(lb+1)/(2*np.pi)*xqml_cl[49, j, 2:], 
         yerr = lb*(lb+1)/(2*np.pi)*xqml_cl1s[:,j, 2:], marker=".", **xqmldict)
 
 
@@ -169,10 +178,10 @@ axs1[0,0].set_ylim(0.,1500)
 axs1[0,1].set_ylim(0,5)
 axs1[1,0].set_ylim(0.,0.05)
 axs1[1,1].set_ylim(-1e-3,1e-3)
-axs1[0,0].legend(frameon=False)
-fig1.suptitle(r"$D_\ell$ comparaison, nside=8")
+axs1[1,0].legend(frameon=False)
+fig1.suptitle(r"$D_\ell$ comparaison, coupled")
 #fig.tight_layout()
-plt.savefig("dl_nside8.png", dpi=200)
+plt.savefig("dl_coupled.png", dpi=200)
 
 
 fig2, axs2 = plt.subplots(2,2, sharex=True, figsize=(11,5))
@@ -185,10 +194,13 @@ for k, ax in enumerate(axs2.flat):
     if j==2:
         ax.set_ylim(-149,151)
     ax.set_ylabel(r"$F_\ell^{{{}}}$".format(comp[j]))
+    cstd = cv(ell, cl_full[j], fsky)
     ax.plot(np.arange(0, 50), np.ones(50), "k--")
-    ax.errorbar(ell[:23], spice_fl[49, j, :23], yerr=spice_fl1s[:,j,:23], 
+    ax.plot(1+ 2./(2*ell+1)/fsky, c="tab:purple", ls=":", label="Cosmic variance")
+    ax.plot(1- 2./(2*ell+1)/fsky, c="tab:purple", ls=":")
+    ax.errorbar(ell[:23]+0.05, spice_fl[49, j, :23], yerr=spice_fl1s[:,j,:23], 
         marker=".", **polspicedict)
-    ax.errorbar(lb, xqml_fl[49, j], yerr=xqml_fl1s[:,j], 
+    ax.errorbar(lb-0.05, xqml_fl[49, j], yerr=xqml_fl1s[:,j], 
         marker=".", **xqmldict)
     """
     ax.plot(ell[:20], spice_fl[2,j,:20], label="95%", **twosigdict)
@@ -224,8 +236,8 @@ for k, ax in enumerate(axs2.flat):
     """
 
 axs2[0,0].legend(frameon=False)
-fig2.suptitle(r"Transfer function comparaison, nside=16")
+fig2.suptitle(r"Transfer function comparaison, coupled")
 #fig.tight_layout()
-plt.savefig("fl_nside16.png", dpi=200)
+plt.savefig("fl_coupled.png", dpi=200)
 
 
