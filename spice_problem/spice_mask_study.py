@@ -63,7 +63,7 @@ hits = hp.ud_grade(hp.read_map("../output/hits_groundnoside.fits"), nside)
 scan_mask = np.ones(12*nside*nside)
 scan_mask[condition>2.5] = 0
 scan_mask[hits==0] = 0
-scan_mask = hp.smoothing(scan_mask, fwhm=np.radians(2))
+#scan_mask = hp.smoothing(scan_mask, fwhm=np.radians(2))
 
 mask = gal_mask*scan_mask
 hp.mollview(mask)
@@ -89,7 +89,7 @@ cl_full[3,2:] = dl_th[2,:-2]/dfac[2:]#TE
 
 dell=1
 lmin=2
-muKarcmin = 0.1
+muKarcmin = 20.
 fwhm=0.
 stokes, spec, istokes, ispecs = getstokes(spec=comp_xqml)
 nspec = len(spec)
@@ -101,7 +101,7 @@ xqml_mask = np.ones(12*nside*nside, dtype=bool)
 xqml_mask[mask<0.1] = False
 xqml_pix = np.sum(xqml_mask)#I don't get it 
 xqml_fsky = np.mean(xqml_mask)
-varmap = np.ones((nstoke * xqml_pix)) * pixvar *0.
+varmap = np.ones((nstoke * xqml_pix)) * pixvar
 NoiseVar = np.diag(varmap)
 #xQML objects -------
 bins = xqml.Bins.fromdeltal(lmin, lmax, dell)
@@ -123,7 +123,7 @@ for i in range(100):
     xqml_cl[i,:,2:] = np.array(esti.get_spectra(xqml_map_a))
 np.save("spice_taumask_kernel_couple.npy", kernel)
 np.save("spice_cl_couple.npy", spice_cl)
-np.save("xqml_cl_couple.npy", xqml_cl)
+np.save("xqml_cl_noise.npy", xqml_cl)
 
 spice_cl = np.load("spice_cl_couple.npy")
 #kernel = np.load("spice_taumask_kernel_couple.npy")
@@ -143,7 +143,7 @@ for i in range(100):
 spice_fl1s = np.abs([spice_fl[49] - spice_fl[15], spice_fl[83] - spice_fl[49]])
 
 
-xqml_cl = np.load("xqml_cl_couple.npy")
+xqml_cl = np.load("xqml_cl_noise.npy")
 xqml_cl.sort(axis=0)
 xqml_cl1s = np.abs([xqml_cl[49] - xqml_cl[15], xqml_cl[83] - xqml_cl[49]])
 
@@ -179,9 +179,9 @@ axs1[0,1].set_ylim(0,5)
 axs1[1,0].set_ylim(0.,0.05)
 axs1[1,1].set_ylim(-1e-3,1e-3)
 axs1[1,0].legend(frameon=False)
-fig1.suptitle(r"$D_\ell$ comparaison, coupled")
+fig1.suptitle(r"$D_\ell$ comparaison, coupled xqml noise")
 #fig.tight_layout()
-plt.savefig("dl_coupled.png", dpi=200)
+plt.savefig("dl_noise.png", dpi=200)
 
 
 fig2, axs2 = plt.subplots(2,2, sharex=True, figsize=(11,5))
@@ -238,6 +238,6 @@ for k, ax in enumerate(axs2.flat):
 axs2[0,0].legend(frameon=False)
 fig2.suptitle(r"Transfer function comparaison, coupled")
 #fig.tight_layout()
-plt.savefig("fl_coupled.png", dpi=200)
+plt.savefig("fl_noise.png", dpi=200)
 
 
