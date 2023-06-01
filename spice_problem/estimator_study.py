@@ -16,7 +16,7 @@ from xqml.xqml_utils import getstokes
 from xqml.simulation import extrapolpixwin, Karcmin2var
 
 #NaMaster
-import pymaster
+from pymaster import *
 
 def cv(ell, cl, fsky):
     #cosmic variance
@@ -32,7 +32,7 @@ def get_default_spice_opts(lmax=700, fsky=None):
         apodizetype=1,
         apodizesigma=180*fsky*0.8,
         thetamax=180*fsky,
-        decouple=True,
+        decouple=False,
         symmetric_cl=True,
         outroot=os.path.realpath(__file__),
         verbose=0,
@@ -76,13 +76,13 @@ def estimator_study(nsims=100, nside=16, mask="dec_cut", dec_cut=0.,
     dl_th = np.loadtxt("planckCOMr3_spectra.txt", unpack=True)
     ell = np.arange(dl_th.shape[1], dtype=int)
     dfac = ell*(ell+1)/(2*np.pi)
-    cl = np.zeros((4,lmax_sim))
+    cl = np.zeros((4,lmax_sim+1))
     comp=["TT", "EE", "BB", "TE"]
     #Change order to match spice output, let mono and dipole be zero
-    cl[0,2:] = dl_th[1,:lmax_sim-2]/dfac[2:lmax_sim]#TT
-    cl[1,2:] = dl_th[3,:lmax_sim-2]/dfac[2:lmax_sim]#EE
-    cl[2,2:] = dl_th[4,:lmax_sim-2]/dfac[2:lmax_sim]#BB
-    cl[3,2:] = dl_th[2,:lmax_sim-2]/dfac[2:lmax_sim]#TE
+    cl[0,2:] = dl_th[1,:lmax_sim-1]/dfac[2:lmax_sim+1]#TT
+    cl[1,2:] = dl_th[3,:lmax_sim-1]/dfac[2:lmax_sim+1]#EE
+    cl[2,2:] = dl_th[4,:lmax_sim-1]/dfac[2:lmax_sim+1]#BB
+    cl[3,2:] = dl_th[2,:lmax_sim-1]/dfac[2:lmax_sim+1]#TE
 
     if mask !="dec_cut":
         pseud_mask = hp.ud_grade(hp.read_map(mask), nside)
@@ -99,7 +99,9 @@ def estimator_study(nsims=100, nside=16, mask="dec_cut", dec_cut=0.,
         spice_cl = np.zeros((nsims, 6, lmax_est+1))
         
     if namaster:
-        nama_cl = np.zeros((nsims, 6, lmax_est+1))
+        nama_mask = mask_apodization(pseud_mask, 10.0, apotype='C1')
+        nama_cl = np.zeros((nsims, 6, lmax_sim+1))
+        nama_bin = NmtBin(nside, nlb = binw)
 
     if qml:
         comp_xqml = ["TT", "TE", "EE", "BB"]
@@ -136,7 +138,23 @@ def estimator_study(nsims=100, nside=16, mask="dec_cut", dec_cut=0.,
             spice_cl[i] = pipeline_tools.spice(simmap, mask=pseud_mask, 
                 **spice_opts)
         if namaster:
-            pass
+            f2 = NmtField(nama_mask, [simmap[1], simmap[2]])#purify option
+            f0 = NmtField(nama_mask, [simmap[0]])
+            wsp = NmtWorkspace()
+            wsp.compute_coupling_matrix(f0, f0, nama_bin)
+            cl_tt_coupled = compute_coupled_cell(f0, f0)
+            nama_cl[i,0,2:] = wsp.decouple_cell(cl_tt_coupled)[0]
+            #cl_bias = deprojection_bias(f0, f2, cl)
+            wsp.compute_coupling_matrix(f0, f2, nama_bin)
+            cl_tpol_coupled = compute_coupled_cell(f0, f2)
+            nama_cl[i,3,2:] = wsp.decouple_cell(cl_tpol_coupled)[0]
+            nama_cl[i,4,2:] = wsp.decouple_cell(cl_tpol_coupled)[1]
+            wsp.compute_coupling_matrix(f2, f2, nama_bin)
+            cl_pol_coupled = compute_coupled_cell(f2, f2)
+            nama_cl[i,1,2:] = wsp.decouple_cell(cl_pol_coupled)[0]
+            nama_cl[i,2,2:] = wsp.decouple_cell(cl_pol_coupled)[3]
+            nama_cl[i,5,2:] = wsp.decouple_cell(cl_pol_coupled)[1]
+
         if qml:
             xqml_map = simmap[:, xqml_mask]
             xqml_map_a = xqml_map + np.random.randn(3, xqml_pix) * np.sqrt(pixvar)
@@ -146,7 +164,7 @@ def estimator_study(nsims=100, nside=16, mask="dec_cut", dec_cut=0.,
     if polspice:
         np.save(sim_tag+"_spicecl.npy", spice_cl)
     if namaster:
-        pass
+        np.save(sim_tag+"_namacl.npy", nama_cl)
     if qml:
         np.save(sim_tag+"_xqmlcl.npy", xqml_cl)
 
@@ -181,8 +199,18 @@ def estimator_study(nsims=100, nside=16, mask="dec_cut", dec_cut=0.,
             label="Polspice")
 
     if namaster:
+        nama_cl = np.load(sim_tag+"_namacl.npy")
         namasterdict =  dict(linestyle="none", color="tab:green", 
             label="Namaster")
+        nama_median = np.median(nama_cl, axis=0)[:4]
+        nama_16 = np.percentile(nama_cl, 15.865, axis=0)[:4]
+        nama_84 = np.percentile(nama_cl, 84.135, axis=0)[:4]
+        nama_cl1s = np.abs([nama_median - nama_16, nama_84 - nama_median])
+        nama_fl = nama_median /cl[:,:lmax_sim+1]
+        nama_fl1s = np.abs(nama_cl1s/cl[:,:lmax_sim+1])
+        nama_bcen = ell[:lmax_sim+1]
+        nama_dfac = nama_bcen*(nama_bcen+1)/(2*np.pi)
+
 
     if qml:
         xqml_cl = np.load(sim_tag+"_xqmlcl.npy")
@@ -204,32 +232,33 @@ def estimator_study(nsims=100, nside=16, mask="dec_cut", dec_cut=0.,
         j = plot_order[k]
         ax.set_xlim(0.,lmax_est+1)
         ax.set_ylabel(r"$D_\ell^{{{}}}$".format(comp[j]))
-        ax.plot(ell[:lmax_sim], dfac[:lmax_sim]*cl[j], "k--", 
+        ax.plot(ell[:lmax_sim+1], dfac[:lmax_sim+1]*cl[j], "k--", 
             label="Planck best-fit spectrum")
-        cstd = cv(ell[:lmax_sim], cl[j], fsky)
-        ax.plot(ell[:lmax_sim], dfac[:lmax_sim]*(cl[j]+cstd), ls=":", 
+        cstd = cv(ell[:lmax_sim+1], cl[j], fsky)
+        ax.plot(ell[:lmax_sim+1], dfac[:lmax_sim+1]*(cl[j]+cstd), ls=":", 
             color="tab:purple", label="Cosmic variance")
-        ax.plot(ell[:lmax_sim], dfac[:lmax_sim]*(cl[j]-cstd), ls=":", 
+        ax.plot(ell[:lmax_sim+1], dfac[:lmax_sim+1]*(cl[j]-cstd), ls=":", 
             color="tab:purple")
 
         if polspice:
-            ax.errorbar(bcen+0.05, dfac_bcen*spice_median[j], 
+            ax.errorbar(bcen+0.1, dfac_bcen*spice_median[j], 
                         marker=".", yerr=dfac_bcen*spice_cl1s[:,j], 
                         **polspicedict)
         if namaster:
-            pass
+            ax.errorbar(nama_bcen, nama_dfac*nama_median[j], marker=".",
+                        yerr=nama_dfac*nama_cl1s[:,j], **namasterdict)
         if qml:
-            ax.errorbar(lb-0.05, dfac_bin*xqml_median[j], marker=".",
+            ax.errorbar(lb-0.1, dfac_bin*xqml_median[j], marker=".",
                         yerr = dfac_bin*xqml_cl1s[:,j], **xqmldict)
 
-    axis_max = np.amax(dfac[:lmax_sim]*(cl+cv(ell[:lmax_sim], cl, fsky)),
+    axis_max = np.amax(dfac[:lmax_sim+1]*(cl+cv(ell[:lmax_sim+1], cl, fsky)),
                                                                    axis=1)
-    axis_min = np.amin(dfac[:lmax_sim]*(cl-cv(ell[:lmax_sim], cl, fsky)), 
+    axis_min = np.amin(dfac[:lmax_sim+1]*(cl-cv(ell[:lmax_sim+1], cl, fsky)), 
                                                                       axis=1)
-    axs1[0,0].set_ylim(0., 1.1*axis_max[0])
-    axs1[0,1].set_ylim(1.1*axis_min[3], 1.1*axis_max[3])
-    axs1[1,0].set_ylim(0., 1.1*axis_max[1])
-    axs1[1,1].set_ylim(1.1*axis_min[2], 1.1*axis_max[2])
+    #axs1[0,0].set_ylim(0., 1.1*axis_max[0])
+    #axs1[0,1].set_ylim(1.1*axis_min[3], 1.1*axis_max[3])
+    #axs1[1,0].set_ylim(0., 1.1*axis_max[1])
+    #axs1[1,1].set_ylim(1.1*axis_min[2], 1.1*axis_max[2])
     axs1[1,0].legend(frameon=False)
     fig1.suptitle(r"$D_\ell$ comparaison")
     plt.savefig(sim_tag+"_dl.png", dpi=200)
@@ -246,15 +275,17 @@ def estimator_study(nsims=100, nside=16, mask="dec_cut", dec_cut=0.,
             ax.set_ylim(-149,151)
         ax.set_ylabel(r"$F_\ell^{{{}}}$".format(comp[j]))
         ax.plot(np.arange(0, 50), np.ones(50), "k--")
-        ax.plot(1+ 2./(2*ell+1)/fsky, c="tab:purple", ls=":", label="Cosmic variance")
+        ax.plot(1+ 2./(2*ell+1)/fsky, c="tab:purple", ls=":", 
+                label="Cosmic variance")
         ax.plot(1- 2./(2*ell+1)/fsky, c="tab:purple", ls=":")
         if polspice:
-            ax.errorbar(bcen+0.05, spice_fl[j], 
-                        yerr=spice_fl1s[:,j], marker=".", **polspicedict)
+            ax.errorbar(bcen+0.1, spice_fl[j], yerr=spice_fl1s[:,j], 
+                        marker=".", **polspicedict)
         if namaster:
-            pass
+            ax.errorbar(nama_bcen, nama_fl[j], marker=".", yerr=nama_fl1s[:,j],
+                        **namasterdict)
         if qml:
-            ax.errorbar(lb-0.05, xqml_fl[j], yerr=xqml_fl1s[:,j], 
+            ax.errorbar(lb-0.1, xqml_fl[j], yerr=xqml_fl1s[:,j], 
                         marker=".", **xqmldict)
 
 
