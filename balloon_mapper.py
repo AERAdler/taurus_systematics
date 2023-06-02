@@ -602,7 +602,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
 
         else:
             for det in ["A","B"]:
-                detname = beam_file+"_{}".format(det)
+                detname = beam_file+"{}".format(det)
                 parse_single_det(beamdir, beam_file, lmax=lmax, 
                                  det=det, stitch_wide=stitch_wide, plot=plot)
                 prop_file = open(opj(beamdir, beam_file+"_prop.pkl"), "rb")
@@ -625,10 +625,10 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
                 a_opts.update({"po_file" : opj(beamdir, beam_file+".npy")})
                 pickle.dump(a_opts, handle, protocol=pickle.HIGHEST_PROTOCOL)
             else:
-                b_opts = dict(polang=polang_b, pol="B", name=beam_file+"_B")
+                b_opts = dict(polang=polang_b, pol="B", name=beam_file+"B")
                 b_opts.update(beam_opts)
-                b_opts.update({"po_file" : opj(beamdir, beam_file+"_B.npy")})
-                a_opts.update({"po_file" : opj(beamdir, beam_file+"_A.npy")})
+                b_opts.update({"po_file" : opj(beamdir, beam_file+"B.npy")})
+                a_opts.update({"po_file" : opj(beamdir, beam_file+"A.npy")})
                 pickle.dump([a_opts, b_opts], handle, 
                             protocol=pickle.HIGHEST_PROTOCOL)
 
