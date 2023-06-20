@@ -29,23 +29,23 @@ def namaster_estimation(maps, mask):
     nside = int((len(mask)/12)**.5)
     lmax = 3*nside-1
     nama_mask = mask_apodization(mask, 10.0, apotype='C1')
-    nama_cl = np.zeros((nsims, 6, lmax+1))
-    nama_bin = NmtBin(nside, nlb = 1.)
+    nama_cl = np.zeros((6, lmax+1))
+    nama_bin = NmtBin(nside, nlb = 1)
     f2 = NmtField(nama_mask, [maps[1], maps[2]], purify_b=True)#purify option
     f0 = NmtField(nama_mask, [maps[0]])
     wsp = NmtWorkspace()
     wsp.compute_coupling_matrix(f0, f0, nama_bin)
     cl_tt_coupled = compute_coupled_cell(f0, f0)
-    nama_cl[i,0,2:] = wsp.decouple_cell(cl_tt_coupled)[0]
+    nama_cl[0,2:] = wsp.decouple_cell(cl_tt_coupled)[0]
     wsp.compute_coupling_matrix(f0, f2, nama_bin)
     cl_tpol_coupled = compute_coupled_cell(f0, f2)
-    nama_cl[i,3,2:] = wsp.decouple_cell(cl_tpol_coupled)[0]
-    nama_cl[i,4,2:] = wsp.decouple_cell(cl_tpol_coupled)[1]
+    nama_cl[3,2:] = wsp.decouple_cell(cl_tpol_coupled)[0]
+    nama_cl[4,2:] = wsp.decouple_cell(cl_tpol_coupled)[1]
     wsp.compute_coupling_matrix(f2, f2, nama_bin)
     cl_pol_coupled = compute_coupled_cell(f2, f2)
-    nama_cl[i,1,2:] = wsp.decouple_cell(cl_pol_coupled)[0]
-    nama_cl[i,2,2:] = wsp.decouple_cell(cl_pol_coupled)[3]
-    nama_cl[i,5,2:] = wsp.decouple_cell(cl_pol_coupled)[1]
+    nama_cl[1,2:] = wsp.decouple_cell(cl_pol_coupled)[0]
+    nama_cl[2,2:] = wsp.decouple_cell(cl_pol_coupled)[3]
+    nama_cl[5,2:] = wsp.decouple_cell(cl_pol_coupled)[1]
 
     return nama_cl
 
@@ -98,9 +98,10 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     mapfilename = "maps_"+sim_tag+".fits"
     fstrs = ["TT", "EE", "BB", "TE", "TB", "EB"]
     spectra_dir = opj(analyzis_dir, "spectra")
-    maps = tools.read_map(opj(analyzis_dir, mapfilename), field=None, fill=np.nan)
-    hits = tools.read_map(opj(analyzis_dir, mapfilename.replace("maps_", "hits_")))
-    cond = tools.read_map(opj(analyzis_dir, mapfilename.replace("maps_", "cond_")))
+    maps = hp.read_map(opj(analyzis_dir, mapfilename), field=None)
+    hits = hp.read_map(opj(analyzis_dir, mapfilename.replace("maps_", "hits_")))
+    cond = hp.read_map(opj(analyzis_dir, mapfilename.replace("maps_", "cond_")))
+    maps[:, maps[0]==hp.UNSEEN] = 0.
     maps = hp.ud_grade(maps, nside_out)
     hits = hp.ud_grade(hits, nside_out)
     cond = hp.ud_grade(cond, nside_out)
@@ -111,11 +112,11 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     mask[hits==0]=0.
 
     if mask_file:
-        custom_mask = hp.ud_grade(tools.read_map(opj(analyzis_dir, mask)), 
+        custom_mask = hp.ud_grade(hp.read_map(opj(analyzis_dir, mask_file)), 
                                   nside_out)
         mask *=custom_mask
 
-    fsky = np.sum(mask) / 12*nside_out**2
+    fsky = np.sum(mask) / (12*nside_out**2)
     print("fsky: {:.3f}".format(fsky))
     cl = namaster_estimation(maps, mask)
     bl = hp.gauss_beam(fwhm=np.radians(fwhm/60.), lmax=len(cl[1])-1)
@@ -126,8 +127,8 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     #Versus ideal
     if ideal_map:
 
-        ideal_maps = tools.read_map(opj(analyzis_dir, ideal_map),
-            field=None, fill=np.nan)
+        ideal_maps = hp.read_map(opj(analyzis_dir, ideal_map),
+            field=None)
         ideal_maps = hp.ud_grade(ideal_maps, nside_out)
         cl_ideal = namaster_estimation(ideal_maps, mask)
         cl_ideal = cl_ideal/bl**2
@@ -152,8 +153,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     gain = 1.
     #Versus input
     if input_map:
-        input_maps = tools.read_map(opj(analyzis_dir, input_map),
-            field=None, fill=np.nan)
+        input_maps = hp.read_map(opj(analyzis_dir, input_map), field=None)
         input_maps = hp.ud_grade(input_maps, nside_out)
         #Calibration
         cl_input= namaster_estimation(input_maps, mask)
@@ -165,9 +165,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
                   fstrs[cal], sim_tag, gain))
 
         diff_input = maps*np.sqrt(gain) - input_maps
-        for diffi in diff_input:
-            diffi[~mask] = np.nan
-        diff_input_cl = tools.spice(diff_input, mask=mask, **spice_opts2use)
+        diff_input_cl = namaster_estimation(diff_input, mask)
         diff_input_cl = diff_input_cl/bl**2
         if cal is not None:
             np.save(opj(spectra_dir, "{}_diff_input_cl_cal{}.npy".format(
@@ -255,28 +253,31 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
 def main():
 
     parser = ap.ArgumentParser(formatter_class=ap.ArgumentDefaultsHelpFormatter)
+    parser.add_argument("--sim_tag", type=str, action="store", dest="sim_tag")
     parser.add_argument("--ideal_map", type=str, action="store", default=None, 
         help="ideal map for comparaison", dest="ideal_map") 
     parser.add_argument("--input_map", type=str, action="store", default=None, 
         help="input map for comparaison", dest="input_map") 
     parser.add_argument("--mask", type=str, default=None, action="store",
-        help="Mask for analysis", dest="mask")
+        help="Mask for analysis", dest="mask_file")
     parser.add_argument("--calibrate", type=int, default=None, action="store", 
         dest="calibrate", help="Calibrate vs ideal or input") 
     parser.add_argument("--plot", default=False, action="store_true", 
         dest="plot", help="Plot spectra") 
     parser.add_argument("--label", type=str, action="store", default=None, 
     help="Label of non-ideality on plots", dest="label") 
+    parser.add_argument("--fwhm", type=float, action="store", dest="fwhm", 
+        default=30.)
     args = parser.parse_args()
 
-    analyzis_dir = "./"
+    analyzis_dir = "./dust_sims"
     analysis(
             analyzis_dir = analyzis_dir, 
             sim_tag = args.sim_tag, 
             ideal_map = args.ideal_map, 
             input_map = args.input_map,
             cal = args.calibrate, 
-            mask_file = args.mask,
+            mask_file = args.mask_file,
             nside_out = 256, 
             lmax = 767,
             fwhm = args.fwhm, 

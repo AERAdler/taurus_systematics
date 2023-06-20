@@ -1112,11 +1112,11 @@ def main():
 
     #Analysis arguments
     parser.add_argument("--ideal_map", type=str, action="store", default=None, 
-	help="ideal map for comparaison", dest="ideal_map") 
+        help="ideal map for comparaison", dest="ideal_map") 
     parser.add_argument("--input_map", type=str, action="store", default=None, 
-	help="input map for comparaison", dest="input_map") 
+        help="input map for comparaison", dest="input_map") 
     parser.add_argument("--mask", type=str, default=None, action="store",
-	help="Mask for analysis", dest="mask")
+        help="Mask for analysis", dest="mask")
     parser.add_argument("--calibrate", type=int, default=None, action="store", 
         dest="calibrate", help="Calibrate vs ideal or input") 
     parser.add_argument("--plot", default=False, action="store_true", 
@@ -1155,9 +1155,16 @@ def main():
 
     if args.run:
         if args.alm_type=="synfast":
-            cls = np.loadtxt(opj(basedir,"wmap7_r0p03_lensed_uK_ext.txt"), 
-                    unpack=True)
-            ell, cls = cls[0], cls[1:]
+            dl_th = np.loadtxt(opj(basedir,"planckrelease3_spectra.txt"), 
+                                unpack=True)
+            ell = dl_th[0]
+            dfac = ell*(ell+1)/(2*np.pi)
+            cls = np.zeros((4,dl_th.shape[0]))
+            #Change order to match spice output, let mono and dipole be zero
+            cls[0,2:] = dl_th[1,2:]/dfac[2:]#TT
+            cls[1,2:] = dl_th[3,2:]/dfac[2:]#EE
+            cls[2,2:] = dl_th[4,2:]/dfac[2:]#BB
+            cls[3,2:] = dl_th[2,2:]/dfac[2:]#TE
             np.random.seed(args.seed) 
             sky_alm = hp.synalm(cls, lmax=args.lmax, new=True, verbose=True)
         else:

@@ -138,7 +138,7 @@ def estimator_study(nsims=100, nside=16, mask="dec_cut", dec_cut=0.,
             spice_cl[i] = pipeline_tools.spice(simmap, mask=pseud_mask, 
                 **spice_opts)
         if namaster:
-            f2 = NmtField(nama_mask, [simmap[1], simmap[2]])#purify option
+            f2 = NmtField(nama_mask, [simmap[1], simmap[2]], purify_b=True)#purify option
             f0 = NmtField(nama_mask, [simmap[0]])
             wsp = NmtWorkspace()
             wsp.compute_coupling_matrix(f0, f0, nama_bin)
@@ -289,7 +289,7 @@ def estimator_study(nsims=100, nside=16, mask="dec_cut", dec_cut=0.,
                         marker=".", **xqmldict)
 
 
-    axs2[0,0].legend(frameon=False)
+    axs2[0,0].legend(frameon=False, ncol=2)
     fig2.suptitle(r"Transfer function comparaison")
     plt.savefig(sim_tag+"_fl.png", dpi=200)
 
