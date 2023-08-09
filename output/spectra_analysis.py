@@ -1,4 +1,4 @@
-#dust_spectra_analysis.py
+#spectra_analysis.py
 
 import healpy as hp
 import matplotlib.pyplot as plt
@@ -130,6 +130,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         ideal_maps = hp.read_map(opj(analyzis_dir, ideal_map),
             field=None)
         ideal_maps = hp.ud_grade(ideal_maps, nside_out)
+        ideal_maps[:, ideal_maps[0]==hp.UNSEEN] = 0.
         cl_ideal = namaster_estimation(ideal_maps, mask)
         cl_ideal = cl_ideal/bl**2
         np.save(opj(analyzis_dir, "spectra", 
@@ -155,6 +156,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     if input_map:
         input_maps = hp.read_map(opj(analyzis_dir, input_map), field=None)
         input_maps = hp.ud_grade(input_maps, nside_out)
+        input_maps[:, input_maps[0]==hp.UNSEEN] = 0.
         #Calibration
         cl_input= namaster_estimation(input_maps, mask)
         cl_input = cl_input/bl**2
@@ -254,6 +256,8 @@ def main():
 
     parser = ap.ArgumentParser(formatter_class=ap.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--sim_tag", type=str, action="store", dest="sim_tag")
+    parser.add_argument("--analyzis_dir", type=str, action="store", default="./", 
+        help="directory for analyzis", dest="analyzis_dir") 
     parser.add_argument("--ideal_map", type=str, action="store", default=None, 
         help="ideal map for comparaison", dest="ideal_map") 
     parser.add_argument("--input_map", type=str, action="store", default=None, 
@@ -270,9 +274,8 @@ def main():
         default=30.)
     args = parser.parse_args()
 
-    analyzis_dir = "./dust_sims"
     analysis(
-            analyzis_dir = analyzis_dir, 
+            analyzis_dir = args.analyzis_dir, 
             sim_tag = args.sim_tag, 
             ideal_map = args.ideal_map, 
             input_map = args.input_map,
