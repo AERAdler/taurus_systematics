@@ -79,7 +79,7 @@ def telescope_view_angles(nside, h, surf_h=0., R = 6.371e6):
 
 def ground_template(inmap, theta_visible, phi_visible, theta_from_tel,
                     phi_from_tel, nside_out=128, cmb=True, freq=95., 
-                    frac_bwidth=.2):
+                    frac_bwidth=.2, aposcale=1.):
     """
     Creates a ground template given a world map and sets of coordinates 
     (see telescope_view_angles) Returns a filled-out ground template.
@@ -106,6 +106,8 @@ def ground_template(inmap, theta_visible, phi_visible, theta_from_tel,
     Frequency at which temperature is measured, in GHz (default : 95)
     frac_bwidth : float
     Bandwidth of the measurement, as a fraction of freq (default : 0.2)
+    aposcale    : float
+    Scale of apodization (degrees)
     """
     
     nside_world = hp.npix2nside(inmap.shape[0])
@@ -132,8 +134,22 @@ def ground_template(inmap, theta_visible, phi_visible, theta_from_tel,
         map_normal[map_horizon:] = np.where(
             map_normal[map_horizon:]!=hp.UNSEEN, map_normal[map_horizon:], 
             hp.ud_grade(map_low, nside)[map_horizon:])
-        map_low = map_normal       
+        map_low = map_normal
+    pix = np.arange(hp.nside2npix(nside_out))
+    theta, phi = hp.pix2ang(nside_out,pix)
+    theta_horizon = np.amin(theta_from_tel)+np.pi/3600#Go 3' lower to be safe
+    apo_mid = 0.5*(theta_horizon+0.5*np.pi)
+    apo_range = (theta_horizon-0.5*np.pi)
+    phi_horizon = np.linspace(0, 2*np.pi, 361)
+    horpix = hp.ang2pix(nside_out, np.ones(361)*theta_horizon, phi_horizon)
+    tphi = map_normal[horpix]
+    tphi[tphi==hp.UNSEEN] = np.average(tphi[tphi!=hp.UNSEEN])
+    horizon_cs = interpolate.CubicSpline(phi_horizon, tphi)
 
+    apod_pixels = pix[np.abs(theta-apo_mid)<0.5*apo_range]#Transition zone
+    aposcale = np.radians(aposcale)
+    map_normal[apod_pixels] = horizon_cs(phi[apod_pixels])
+    map_normal[apod_pixels] *= np.exp(-0.5*((theta[apod_pixels]-theta_horizon)/aposcale)**2)
     return map_normal
 
 def template_from_position(earth_map, lat, lon, h, nside_out=128, 
