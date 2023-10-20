@@ -137,16 +137,19 @@ def ground_template(inmap, theta_visible, phi_visible, theta_from_tel,
         map_low = map_normal
     pix = np.arange(hp.nside2npix(nside_out))
     theta, phi = hp.pix2ang(nside_out,pix)
-    theta_horizon = np.amin(theta_from_tel)+np.pi/3600#Go 3' lower to be safe
+    #Find horizon and transition zone
+    theta_horizon = np.amin(theta_from_tel)+np.pi/3600.
     apo_mid = 0.5*(theta_horizon+0.5*np.pi)
     apo_range = (theta_horizon-0.5*np.pi)
-    phi_horizon = np.linspace(0, 2*np.pi, 361)
-    horpix = hp.ang2pix(nside_out, np.ones(361)*theta_horizon, phi_horizon)
+    #Sample along horizon
+    phi_horizon = np.linspace(0, 2*np.pi, 3601)
+    horpix = hp.ang2pix(nside_out, np.ones(3601)*theta_horizon, phi_horizon)
     tphi = map_normal[horpix]
-    tphi[tphi==hp.UNSEEN] = np.average(tphi[tphi!=hp.UNSEEN])
-    horizon_cs = interpolate.CubicSpline(phi_horizon, tphi)
-
-    apod_pixels = pix[np.abs(theta-apo_mid)<0.5*apo_range]#Transition zone
+    phi_horizon = phi_horizon[tphi!=hp.UNSEEN] #Exclude bad pixels
+    tphi = tphi[tphi!=hp.UNSEEN]
+    horizon_cs = interpolate.interp1d(phi_horizon, tphi)
+    #Transition zone
+    apod_pixels = pix[np.abs(theta-apo_mid)<0.5*apo_range]
     aposcale = np.radians(aposcale)
     map_normal[apod_pixels] = horizon_cs(phi[apod_pixels])
     map_normal[apod_pixels] *= np.exp(-0.5*((theta[apod_pixels]-theta_horizon)/aposcale)**2)
