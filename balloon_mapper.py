@@ -1155,16 +1155,15 @@ def main():
 
     if args.run:
         if args.alm_type=="synfast":
-            dl_th = np.loadtxt(opj(basedir,"planckrelease3_spectra.txt"), 
-                                unpack=True)
-            ell = dl_th[0]
+            dl_th = np.loadtxt(opj(basedir,"planckrelease3_spectra.txt"))
+            ell = dl_th[:,0]
             dfac = ell*(ell+1)/(2*np.pi)
             cls = np.zeros((4,dl_th.shape[0]))
             #Change order to match spice output, let mono and dipole be zero
-            cls[0,2:] = dl_th[1,2:]/dfac[2:]#TT
-            cls[1,2:] = dl_th[3,2:]/dfac[2:]#EE
-            cls[2,2:] = dl_th[4,2:]/dfac[2:]#BB
-            cls[3,2:] = dl_th[2,2:]/dfac[2:]#TE
+            cls[0,2:] = dl_th[2:,1]/dfac[2:]#TT
+            cls[1,2:] = dl_th[2:,3]/dfac[2:]#EE
+            cls[2,2:] = dl_th[2:,4]/dfac[2:]#BB
+            cls[3,2:] = dl_th[2:,2]/dfac[2:]#TE
             np.random.seed(args.seed) 
             sky_alm = hp.synalm(cls, lmax=args.lmax, new=True, verbose=True)
         else:
