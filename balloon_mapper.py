@@ -324,8 +324,8 @@ def run_sim(simname, sky_alm,
         sample_rate = sample_rate, track_file = balloon_track, 
         latlon = True, sun_angle = 6.)
     lat, lon, ctime = balloon_night_ctime(**ctime_dict)
-    print("Rank {} computed lon, lat, ctime".format(rank))
     night_samps = len(ctime)
+    total_samps = night_samps
     passct_kwargs = dict(ctime=ctime)
     scan = ScanStrategy(sample_rate=sample_rate, num_samples=night_samps, 
                 external_pointing=True, ctime0=ctime0, lat=lat, lon=lon)
@@ -351,7 +351,6 @@ def run_sim(simname, sky_alm,
     else:
         scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
                               sensitive_freq=freq, file_names=beam_files)
-        print("loaded focal plane")
     if point_bias_mode!=0:
         pbdeg = np.array(point_bias)/60.
         if point_bias_mode==1:
@@ -512,7 +511,7 @@ def run_sim(simname, sky_alm,
                                             **scan_ground_opts)
             night_ground, _ = scan_ground.solve_for_map(fill=0.)
             if scan_ground.mpi_rank==0:
-                ground_maps += night_ground 
+                ground_maps += night_ground*float(night_samps)/total_samps 
 
         #add to sky map
         if scan_ground.mpi_rank==0:
