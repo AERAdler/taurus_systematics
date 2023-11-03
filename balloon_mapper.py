@@ -396,127 +396,21 @@ def run_sim(simname, sky_alm,
     
     if filter_highpass and (w_c is not None):
         scan.set_filter_dict(w_c, m=filter_m)
-
-    scan.scan_instrument_mpi(sky_alm, **scan_opts)
-    maps, cond, proj = scan.solve_for_map(return_proj=True)
-
-    if ground:
-        """
-        In the presence of the ground, we make per-night maps of the ground 
-        signal. These maps get added to the sky map for the pure sky.
-        It is possible to do it within a beamconv call for a fixed ground 
-        template: however, here we have to reproject the ground each night as 
-        our balloons drift
-        """
-        #Create empty sky alms and empty ground signal map
-        empty_sky = np.zeros((3,hp.Alm.getsize(lmax)), dtype=complex)
-        ground_maps = np.zeros((3, 12*nside_out**2))
-        #Find start index of each night
-        night_starts = np.argwhere(ctime[1:]-ctime[:-1]>2*sample_rate)
-        night_starts = night_starts.flatten()+1
-        night_starts = np.concatenate(([0], night_starts))
-        for i, startidx in enumerate(night_starts):
-            #Night start time, position, altitude
-            lat0_n = lat[startidx]
-            lon0_n = lon[startidx]
-            c0_n  = ctime[startidx]
-            print(lat0_n, lon0_n, c0_n)
-            if i==len(night_starts)-1:
-                ctime_n = ctime[startidx:]
-                lat_n = lat[startidx:]
-                lon_n = lon[startidx:]
-            else:
-                ctime_n = ctime[startidx:night_starts[i+1]]
-                lat_n = lat[startidx:night_starts[i+1]]
-                lon_n = lon[startidx:night_starts[i+1]]
-            nsamp_night = len(ctime_n)            
-            h = 35000+200*np.random.normal()
-            yd = date.fromtimestamp(c0_n).strftime("%Y%j")
-            passct_n_kwargs = dict(ctime=ctime_n)
-            if rank==0:
-                print("Projecting ground, night:{}".format(i))
-                #Project ground to telescope frame
-                world_map = hp.read_map(opj(basedir,"ground_input",
-                            "SSMIS","SSMIS-{}-91H_South.fits".format(yd)))
-                ground_template = template_from_position(world_map,lat0_n,lon0_n, 
-                    h, nside_out=4096, cmb=True, freq=freq, frac_bwidth=.2)
-                ground_alm = hp.map2alm([ground_template, 
+    if ground: #Fixed ground for now
+        ground_template = np.ones(12*4096**2)*2.5e8
+        tht, phi = hp.pix2ang(np.arange(12*4096**2), 4096)
+        sky_tht = np.degrees(tht[tht<np.radians(96)])
+        temp_scaling = np.exp(.5 * ((sky_tht-96)/0.95)**2 )#roughly 4e8 damping at horizon
+        ground_template[tht<np.radians(96)] *= temp_scaling
+        ground_alm = hp.map2alm([ground_template, 
                                     np.zeros_like(ground_template), 
                                     np.zeros_like(ground_template)], 
                                     lmax = lmax)
-                ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
-            else:
-                ground_alm = np.zeros((3,hp.Alm.getsize(lmax)), dtype=complex)
-            #Spread to all ranks
-            comm.Bcast(ground_alm, root=0)
-            #Redo the same type of scan as the sky, but shorter (one night)
-            scan_ground = ScanStrategy(sample_rate=sample_rate, 
-                num_samples=nsamp_night, external_pointing=True, 
-                ctime0=c0_n, lat=lat_n, lon=lon_n)
-            scan_ground_opts = scan_opts.copy()
-            scan_ground_opts["ctime_kwargs"] = passct_n_kwargs
-            scan_ground_opts["q_bore_kwargs"]["ground"] = True
-            if create_fpu:#A square focal plane
-                scan_ground.create_focal_plane(nrow=nfloor, ncol=nfloor, 
-                    fov=fov, ab_diff=ab_diff, **beam_opts)
-
-            else:
-                scan_ground.load_focal_plane(beamdir, btype=btype, 
-                    no_pairs=no_pairs, sensitive_freq=freq, 
-                    file_names=beam_files)
-
-            if point_bias_mode!=0:
-                pbdeg = np.array(point_bias)/60.
-                if point_bias_mode==1:
-                    scan_ground.set_global_prop_random(dict(az_bias=pbdeg[0],
-                       el_bias=pbdeg[1], polang_bias=pbdeg[2])) 
-                elif point_bias_mode==2:
-                    scan_ground.set_global_prop(dict(az_bias=pbdeg[0],
-                       el_bias=pbdeg[1], polang_bias=pbdeg[2])) 
-                else:
-                    raise ValueError("Unknown pointing error mode")
-            if hwp_model == "ideal":
-                pass
-            elif "band" in hwp_model:
-                center_nu = 185.
-                if hwp_model=="band5":
-                    stack = hwp_band5(center_nu)
-                elif hwp_model=="band3":
-                    stack = hwp_band3(center_nu)
-                else:
-                    stack = hwp_band(center_nu)
-                for beami in scan_ground.beams:
-                    beami[0].set_hwp_mueller(thicknesses=stack[0], 
-                        indices=stack[1], losses=stack[2], angles=stack[3])
-                    beami[1].set_hwp_mueller(thicknesses=stack[0], 
-                        indices=stack[1],losses=stack[2], angles=stack[3]) 
-            else:
-                for beami in scan_ground.beams:
-                    beami[0].set_hwp_mueller(model_name=hwp_model)
-                    beami[1].set_hwp_mueller(model_name=hwp_model) 
-            scan_ground.partition_mission(chunksize=int(sample_rate*3600*24))
-            scan_ground.allocate_maps(nside=nside_out)
-    
-            hwpf = 0.
-            if hwp_mode == "stepped":
-                hwpf = hstepf
-            elif hwp_mode == "continuous":
-                hwpf = hfreq   
-            scan_ground.set_hwp_mod(mode=hwp_mode, freq=hwpf, varphi=varphi)
-            
-            if filter_highpass and (w_c is not None):
-                scan_ground.set_filter_dict(w_c, m=filter_m)
-
-            scan_ground.scan_instrument_mpi(empty_sky, ground_alm=ground_alm, 
-                                            **scan_ground_opts)
-            night_ground, _ = scan_ground.solve_for_map(fill=0.)
-            if scan_ground.mpi_rank==0:
-                ground_maps += night_ground*float(night_samps)/total_samps 
-
-        #add to sky map
-        if scan_ground.mpi_rank==0:
-            maps = maps+ground_maps 
-
+        ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
+        scan.scan_instrument_mpi(sky_alm, ground_alm=ground_alm, **scan_opts)
+    else:
+        scan.scan_instrument_mpi(sky_alm, **scan_opts)
+    maps, cond, proj = scan.solve_for_map(return_proj=True)
 
     if scan.mpi_rank==0:
 
