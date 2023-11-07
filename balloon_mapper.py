@@ -397,16 +397,23 @@ def run_sim(simname, sky_alm,
     if filter_highpass and (w_c is not None):
         scan.set_filter_dict(w_c, m=filter_m)
     if ground: #Fixed ground for now
-        ground_template = np.ones(12*4096**2)*2.5e8
-        tht, phi = hp.pix2ang(np.arange(12*4096**2), 4096)
-        sky_tht = np.degrees(tht[tht<np.radians(96)])
-        temp_scaling = np.exp(.5 * ((sky_tht-96)/0.95)**2 )#roughly 4e8 damping at horizon
-        ground_template[tht<np.radians(96)] *= temp_scaling
-        ground_alm = hp.map2alm([ground_template, 
+        if rank==0:
+            ground_template = np.ones(12*4096**2)*2.5e8
+            tht, phi = hp.pix2ang(4096, np.arange(12*4096**2))
+            sky_tht = np.degrees(tht[np.abs(tht-np.radians(93))<np.pi/60.])
+            temp_scaling = np.exp(.5 * ((sky_tht-96)/0.95)**2 )#roughly 4e8 damping at horizon
+            ground_template[np.abs(tht-np.radians(93))<np.pi/60.] *= temp_scaling
+            ground_alm = hp.map2alm([ground_template, 
                                     np.zeros_like(ground_template), 
                                     np.zeros_like(ground_template)], 
                                     lmax = lmax)
-        ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
+            ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
+        else:
+            ground_alm = np.zeros((3,hp.Alm.getsize(lmax)), dtype=complex)
+        print("Rank {:d} is here".format(rank))
+        comm.Barrier()
+        comm.Bcast(ground_alm, root=0)
+        scan_opts["q_bore_kwargs"]["ground"] = True
         scan.scan_instrument_mpi(sky_alm, ground_alm=ground_alm, **scan_opts)
     else:
         scan.scan_instrument_mpi(sky_alm, **scan_opts)
