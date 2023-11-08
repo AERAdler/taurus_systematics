@@ -398,19 +398,36 @@ def run_sim(simname, sky_alm,
         scan.set_filter_dict(w_c, m=filter_m)
     if ground: #Fixed ground for now
         if rank==0:
+            t1 = time.time()
             ground_template = np.ones(12*4096**2)*2.5e8
             tht, phi = hp.pix2ang(4096, np.arange(12*4096**2))
             sky_tht = np.degrees(tht[np.abs(tht-np.radians(93))<np.pi/60.])
-            temp_scaling = np.exp(.5 * ((sky_tht-96)/0.95)**2 )#roughly 4e8 damping at horizon
+            temp_scaling = np.exp(-.5 * ((sky_tht-96)/0.95)**2 )#roughly 4e8 damping at horizon
             ground_template[np.abs(tht-np.radians(93))<np.pi/60.] *= temp_scaling
+            ground_template[tht<np.pi/2.] = 0.
+            """
+            lat0 = lat[0]
+            lon0 = lon[0]
+            c0  = ctime[0]
+            h = 35000+200*np.random.normal()
+            yd = date.fromtimestamp(c0).strftime("%Y%j")
+            world_map = hp.read_map(opj(basedir,"ground_input", "SSMIS",
+                                    "SSMIS-{}-91H_South.fits".format(yd)))
+            ground_template = template_from_position(world_map, lat0, lon0,
+                        h, nside_out=4096, cmb=True, freq=freq, frac_bwidth=.2, aposcale=0.95)
+            """
+            print("Building ground template: {:.2f}seconds".format(time.time()-t1))
+            t1 = time.time()
+            hp.write_map("apodized_ground{}.fits".format(yd), ground_template)
             ground_alm = hp.map2alm([ground_template, 
                                     np.zeros_like(ground_template), 
                                     np.zeros_like(ground_template)], 
                                     lmax = lmax)
-            ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.))
+            ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.)) 
+            print("Transforming to alms: {:.2f}seconds".format(time.time()-t1))
         else:
             ground_alm = np.zeros((3,hp.Alm.getsize(lmax)), dtype=complex)
-        print("Rank {:d} is here".format(rank))
+        
         comm.Barrier()
         comm.Bcast(ground_alm, root=0)
         scan_opts["q_bore_kwargs"]["ground"] = True
@@ -431,7 +448,8 @@ def run_sim(simname, sky_alm,
     return
 
 def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000, 
-                no_pairs=False, ab_diff=90., stitch_wide=False, plot=False):
+                no_pairs=False, ab_diff=90., stitch_wide=False, sym_beam=False,
+                plot=False):
     """
     Load GRASP output, convert into blms and save.
 
@@ -463,6 +481,8 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
     stitch_wide : bool
         Whether to add a sidelobe (from the pickle file) to the main beam
         (default: False)
+    sym_beam: bool
+        Supress all non-zero m modes (default: False)
     plot : bool
         Produce plots of the Stokes beams (default: False)
     Notes
@@ -495,7 +515,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
             format(sat.mpi_rank, bidx, beam_file))
         if no_pairs:
             parse_single_det(beamdir, beam_file, lmax=lmax, 
-                             stitch_wide=stitch_wide, plot=plot)
+                stitch_wide=stitch_wide, sym_beam=sym_beam, plot=plot)
             prop_file = open(opj(beamdir, beam_file+"_prop.pkl"), "rb")
             prop = pickle.load(prop_file)
             prop_file.close()
@@ -503,8 +523,8 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
         else:
             for det in ["A","B"]:
                 detname = beam_file+"{}".format(det)
-                parse_single_det(beamdir, beam_file, lmax=lmax, 
-                                 det=det, stitch_wide=stitch_wide, plot=plot)
+                parse_single_det(beamdir, beam_file, lmax=lmax, det=det,
+                    stitch_wide=stitch_wide, sym_beam=sym_beam, plot=plot)
                 prop_file = open(opj(beamdir, beam_file+"_prop.pkl"), "rb")
                 prop = pickle.load(prop_file)
                 prop_file.close()
@@ -535,7 +555,7 @@ def parse_beams(beam_files, beamdir, ss_obj=None, lmax=2000,
     sat.barrier()
 
 def parse_single_det(beamdir, beam_file, lmax=2000, det=None, 
-                     stitch_wide=False, plot=False):
+                     stitch_wide=False, sym_beam=False, plot=False):
     """
     Load GRASP output, convert into blms and save.
 
@@ -557,6 +577,8 @@ def parse_single_det(beamdir, beam_file, lmax=2000, det=None,
     stitch_wide : bool
         Whether to add a sidelobe (from the pickle file) to the main beam
         (default: False)
+    sym_beam : bool
+        Whether to set all non-zero m modes to zero. (default: False)
     plot : bool
         Produce plots of the Stokes beams (default: False)
     Notes
@@ -638,7 +660,8 @@ def parse_single_det(beamdir, beam_file, lmax=2000, det=None,
     blmm2, blmp2 = beam_tools.get_pol_beam(blm_stokes[1], blm_stokes[2])
     blm  = blm_stokes[0]
     blm = np.array([blm, blmm2, blmp2], dtype=np.complex128)
-
+    if sym_beam:
+        blm[:, lmax:] = 0.
     # save npy file
     po_file = opj(beamdir, beam_file+det+".npy")
     np.save(po_file, blm)
@@ -902,6 +925,8 @@ def main():
         type=str, default=None, help="Text file listing beams to use")
     parser.add_argument("--beam_lmax", action="store", dest="beam_lmax",
         default=2000, type=int, help="Maximum lmax for beam decomposition")
+    parser.add_argument("--sym_beam", action="store_true", dest="sym_beam",
+        default=False, help="Set m≠0 modes to 0")
     parser.add_argument("--beam_type", type=str, dest="btype", 
         default="Gaussian", help="Input beam type: [Gaussian, PO]")
     parser.add_argument("--stitch_wide", action="store_true", dest="stitch_wide",
@@ -1051,7 +1076,8 @@ def main():
     if args.grasp:
         parse_beams(beam_files, beamdir, ss_obj=None, lmax=args.beam_lmax, 
                     no_pairs=args.no_pairs, ab_diff = args.ab_diff, 
-                    stitch_wide=args.stitch_wide, plot=args.plot_beam)
+                    stitch_wide=args.stitch_wide, sym_beam=args.sym_beam, 
+                    plot=args.plot_beam)
 
     if args.run:
         if args.alm_type=="synfast":
@@ -1066,6 +1092,8 @@ def main():
             cls[3,2:] = dl_th[2:,2]/dfac[2:]#TE
             np.random.seed(args.seed) 
             sky_alm = hp.synalm(cls, lmax=args.lmax, new=True, verbose=True)
+        elif args.alm_type=="empty":
+            sky_alm = np.zeros((3, hp.Alm.getsize(args.lmax))
         else:
             map_path = opj(basedir, args.sky_map)
             sky_alm = hp.map2alm(hp.read_map(map_path, field=None), 

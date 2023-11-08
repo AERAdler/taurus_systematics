@@ -152,11 +152,13 @@ def ground_template(inmap, theta_visible, phi_visible, theta_from_tel,
     apod_pixels = pix[np.abs(theta-apo_mid)<0.5*apo_range]
     aposcale = np.radians(aposcale)
     map_normal[apod_pixels] = horizon_cs(phi[apod_pixels])
-    map_normal[apod_pixels] *= np.exp(-0.5*((theta[apod_pixels]-theta_horizon)/aposcale)**2)
+    #roughly 4e8 damping at horizon
+    temp_scaling = np.exp(-.5 * ((theta[apod_pixels]-theta_horizon)/aposcale)**2 )
+    map_normal[apod_pixels] *= temp_scaling
     return map_normal
 
 def template_from_position(earth_map, lat, lon, h, nside_out=128, 
-                           cmb=True, freq=95., frac_bwidth=.2):
+                           cmb=True, freq=95., frac_bwidth=.2, aposcale=1.):
     """
     Creates a ground template given a world map, a position and an altitude.
     Returns a filled-out ground template.
@@ -190,6 +192,6 @@ def template_from_position(earth_map, lat, lon, h, nside_out=128,
     ground_temp = ground_template(earth_rot, theta_visible, phi_visible, 
                                   theta_from_tel, phi_from_tel, 
                                   nside_out=nside_out, cmb=cmb, freq=freq, 
-                                  frac_bwidth=frac_bwidth)
+                                  frac_bwidth=frac_bwidth, aposcale=aposcale)
     return ground_temp
 
