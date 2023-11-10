@@ -135,6 +135,7 @@ def ground_template(inmap, theta_visible, phi_visible, theta_from_tel,
             map_normal[map_horizon:]!=hp.UNSEEN, map_normal[map_horizon:], 
             hp.ud_grade(map_low, nside)[map_horizon:])
         map_low = map_normal
+    """
     pix = np.arange(hp.nside2npix(nside_out))
     theta, phi = hp.pix2ang(nside_out,pix)
     #Find horizon and transition zone
@@ -155,6 +156,7 @@ def ground_template(inmap, theta_visible, phi_visible, theta_from_tel,
     #roughly 4e8 damping at horizon
     temp_scaling = np.exp(-.5 * ((theta[apod_pixels]-theta_horizon)/aposcale)**2 )
     map_normal[apod_pixels] *= temp_scaling
+    """
     return map_normal
 
 def template_from_position(earth_map, lat, lon, h, nside_out=128, 

@@ -399,6 +399,7 @@ def run_sim(simname, sky_alm,
     if ground: #Fixed ground for now
         if rank==0:
             t1 = time.time()
+            """
             ground_template = np.ones(12*4096**2)*2.5e8
             tht, phi = hp.pix2ang(4096, np.arange(12*4096**2))
             sky_tht = np.degrees(tht[np.abs(tht-np.radians(93))<np.pi/60.])
@@ -415,29 +416,29 @@ def run_sim(simname, sky_alm,
                                     "SSMIS-{}-91H_South.fits".format(yd)))
             ground_template = template_from_position(world_map, lat0, lon0,
                         h, nside_out=4096, cmb=True, freq=freq, frac_bwidth=.2, aposcale=0.95)
-            """
-            print("Building ground template: {:.2f}seconds".format(time.time()-t1))
-            t1 = time.time()
-            hp.write_map("apodized_ground{}.fits".format(yd), ground_template)
+            print("Building ground template: {:.2f}s".format(time.time()-t1))
+            t2 = time.time()
             ground_alm = hp.map2alm([ground_template, 
                                     np.zeros_like(ground_template), 
                                     np.zeros_like(ground_template)], 
                                     lmax = lmax)
             ground_alm = hp.smoothalm(ground_alm, fwhm = np.radians(1.)) 
-            print("Transforming to alms: {:.2f}seconds".format(time.time()-t1))
+            print("Transforming to alms: {:.2f}s".format(time.time()-t2))
         else:
             ground_alm = np.zeros((3,hp.Alm.getsize(lmax)), dtype=complex)
         
         comm.Barrier()
         comm.Bcast(ground_alm, root=0)
         scan_opts["q_bore_kwargs"]["ground"] = True
+        t3 = time.time()
         scan.scan_instrument_mpi(sky_alm, ground_alm=ground_alm, **scan_opts)
     else:
+        t3 = time.time()
         scan.scan_instrument_mpi(sky_alm, **scan_opts)
     maps, cond, proj = scan.solve_for_map(return_proj=True)
 
     if scan.mpi_rank==0:
-
+        print("Scanning, mapmaking {:.2f}s".format(time.time()-t3))
         hp.write_map(opj(basedir, outdir, "maps_"+simname+".fits"),
              maps)
         hp.write_map(opj(basedir, outdir, "cond_"+simname+".fits"),
@@ -926,7 +927,7 @@ def main():
     parser.add_argument("--beam_lmax", action="store", dest="beam_lmax",
         default=2000, type=int, help="Maximum lmax for beam decomposition")
     parser.add_argument("--sym_beam", action="store_true", dest="sym_beam",
-        default=False, help="Set m≠0 modes to 0")
+        default=False, help="Set m!=0 modes to 0")
     parser.add_argument("--beam_type", type=str, dest="btype", 
         default="Gaussian", help="Input beam type: [Gaussian, PO]")
     parser.add_argument("--stitch_wide", action="store_true", dest="stitch_wide",
@@ -1093,7 +1094,7 @@ def main():
             np.random.seed(args.seed) 
             sky_alm = hp.synalm(cls, lmax=args.lmax, new=True, verbose=True)
         elif args.alm_type=="empty":
-            sky_alm = np.zeros((3, hp.Alm.getsize(args.lmax))
+            sky_alm = np.zeros((3, hp.Alm.getsize(args.lmax)))
         else:
             map_path = opj(basedir, args.sky_map)
             sky_alm = hp.map2alm(hp.read_map(map_path, field=None), 
