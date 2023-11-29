@@ -49,59 +49,48 @@ def bin_spectrum(cls, lmin=2, lmax=None, binwidth=18, return_error=False):
     return ellb, clsb
 
 
-binw=10
+binw=5
 input_spec = np.loadtxt("planckrelease3_spectra.txt")
-sigma_tau = np.load(opj("..","sigma_tau_cl_target.npy"))
+ll, cvEE = np.load(opj("..", "cv_EE_fullsky.npy"))
+lldfac = 0.5*ll*(ll+1)/np.pi
 
 err_mode = ["fixed_azel", "randm_azel", "fixed_polang", "randm_polang"]
-color_scale =  ["tab:blue", "tab:orange", "tab:green", "tab:red"]
+color_scale =  ["tab:blue", "tab:green", "tab:orange", "tab:red"]
 err_labels = ["Common az-el offset", "Random az-el offset", 
     r"Common $\xi$ offset", r"Random $\xi$ offset"]
+beam_type = ["33gauss", "po", "wingfit", "poside"]
+beam_names_full = ["Gaussian", "PO", "Gaussian+sidelobe", "PO+sidelobe"]
 ms = ["o", "s", "v", "^"]
-plt.figure(1)
-for i , em in enumerate(err_mode):
 
-    fname = "{}_point_fp2_gauss_cl.npy".format(em)
-    spec = np.load(opj("spectra", fname))
-    ell = np.arange(spec.shape[1])
-    dfac = 0.5*ell*(ell+1)/np.pi
 
-    bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
-        binwidth=binw, return_error=True)
-    bell_offset = (2*i-3)/9.*binw
-    plt.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], label=err_labels[i], 
-            ls="none", color=color_scale[i],  marker=ms[i], markersize=4)
-plt.plot(input_spec[2:,0], input_spec[2:,3], "k", label="Input spectrum")
-plt.xlim(0,200)
-plt.ylim(5e-4, 4.)
-plt.yscale("log")
-plt.legend(frameon=False)
-plt.xlabel(r"Multipole $\ell$")
-plt.ylabel(r"$D_\ell^{EE}$ $(\mu K^2)$")
+fig, axes = plt.subplots(2, 2, figsize=(7,4), sharex=True, sharey=True)
+for i, ax in enumerate(axes.flat):
+    for j, bt in enumerate(beam_type):
+
+        err = err_mode[i]
+        file = "{}_point_fp2_{}_diffideal_cl_calno.npy".format(err, bt)
+        spec = np.load(opj("cmb_sims", "spectra", file))
+        ell = np.arange(spec.shape[1])
+        dfac = 0.5*ell*(ell+1)/np.pi
+
+        bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+            binwidth=binw, return_error=True)
+        bell_offset = (2*j-3)/9.*binw
+        ax.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], 
+            label=beam_names_full[j], ls="none", color=color_scale[j], 
+            markersize=4, marker=ms[j])
+    ax.plot(ll, lldfac*cvEE/0.7, c="tab:purple", label=r"c.v. $f_{sky}=0.7$")
+    ax.text(20, 0.01, err_labels[i], fontweight="bold")
+    ax.set_xlim(2,100)
+    ax.set_yscale("log")
+    ax.set_ylim(5e-7, 5e-2)
+
+axes[1,1].legend(frameon=False, ncol=2, columnspacing=-3.)
+axes[1,0].set_xlabel(r"Multipole $\ell$")
+axes[1,1].set_xlabel(r"Multipole $\ell$")
+axes[0,0].set_ylabel(r"$D_\ell^{EE}$ $(\mu K^2)$")
+axes[1,0].set_ylabel(r"$D_\ell^{EE}$ $(\mu K^2)$")
 plt.tight_layout()
-plt.savefig(opj("images", "pointing_spectra.png"), dpi=200)
-
-plt.figure(2)
-for i , em in enumerate(err_mode):
-
-    diff_file = "{}_point_fp2_gauss_diffideal_cl_calno.npy".format(em)
-    spec = np.load(opj("spectra", diff_file))
-    ell = np.arange(spec.shape[1])
-    dfac = 0.5*ell*(ell+1)/np.pi
-
-    bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
-        binwidth=binw, return_error=True)
-    bell_offset = (2*i-3)/9.*binw
-    plt.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], label=err_labels[i],
-            ls="none", color=color_scale[i], markersize=4, marker=ms[i])
-
-plt.plot(ell[2:], dfac[2:]*sigma_tau, c="tab:purple", label=r"$\sigma(\tau)=0.003$")
-plt.xlim(0,200)
-plt.ylim(1e-7, 0.1)
-plt.yscale("log")
-plt.legend(frameon=False, ncol=2)
-plt.xlabel(r"Multipole $\ell$")
-plt.ylabel(r"$D_\ell^{EE}$ $(\mu K^2)$")
-plt.tight_layout()
-plt.savefig(opj("images", "pointing_diffspectra.png"), dpi=200)
+plt.savefig(opj("images", "pointing_diffspectra.pdf"), 
+    dpi=200, bbox_inches="tight")
 plt.show()
