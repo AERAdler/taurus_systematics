@@ -80,7 +80,7 @@ for i, ax in enumerate(axes.flat):
             label=beam_names_full[j], ls="none", color=color_scale[j], 
             markersize=4, marker=ms[j])
     ax.plot(ll, lldfac*cvEE/0.7, c="tab:purple", label=r"c.v. $f_{sky}=0.7$")
-    ax.text(20, 0.01, err_labels[i], fontweight="bold")
+    ax.text(20, 0.01, err_labels[i])
     ax.set_xlim(2,100)
     ax.set_yscale("log")
     ax.set_ylim(5e-7, 5e-2)
