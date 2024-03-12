@@ -95,7 +95,14 @@ for i, ax in enumerate(ax6.flat):
         ax.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
             color=cal_color[j], marker=cal_mkrs[j], markersize=2, label=cal_label[j])
 
-    ax.plot(ll, lldfac*cvEE/0.7, c="tab:purple")
+    bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+        return_error=True)
+    ax.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:purple", marker="none")
+    bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+        return_error=True)
+    ax.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:pink", marker="none")
 
 ax6[0].set_xlim(2.,102.)
 ax6[0].set_ylim(5e-7, 5e-2)
@@ -103,11 +110,12 @@ ax6[0].set_yscale("log")
 ax6[0].yaxis.set_major_locator(LogLocator(100))
 ax6[0].yaxis.set_minor_locator(LogLocator(100, subs=(0.1,)))
 ax6[0].yaxis.set_minor_formatter(NullFormatter())
-ax6[2].legend(frameon=False, ncol=3, loc="lower right", fontsize=9, columnspacing=0.5, handletextpad=0.1, bbox_to_anchor=(0.99,-0.1))
+ax6[2].legend(frameon=False, ncol=3, loc="lower right", fontsize=9, 
+    columnspacing=0.5, handletextpad=0.1, bbox_to_anchor=(0.99,-0.1))
 f6.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.07)
 f6.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.57, x=0.07)
 f6.tight_layout(h_pad=0.2)
-plt.savefig(opj("images","binned_dust_spectra_difference_from_gauss_red.pdf"), dpi=180, bbox_inches="tight")
+plt.savefig(opj("images","binned_dust_spectra_difference_from_gauss_red_bincv.pdf"), dpi=180, bbox_inches="tight")
 
 ### Ghost beam
 plt.figure(7, figsize=(10./3, 10./3.))
@@ -125,15 +133,23 @@ for i , bt in enumerate(beam_type):
     plt.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], label=beam_names_full[i],
             ls="none", color=beam_colors[i], markersize=3, marker=beam_mkrs[i])
 
-plt.plot(ll, lldfac*cvEE, c="tab:purple")
+bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+        return_error=True)
+plt.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:purple", marker="none")
+bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+        return_error=True)
+plt.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:pink", marker="none")
 plt.xlim(2,100)
 plt.ylim(5e-7, 0.05)
 plt.yscale("log")
-plt.legend(frameon=False, ncol=2, fontsize=9, loc="upper center", columnspacing=0.5)
+plt.legend(frameon=False, ncol=1, fontsize=9, loc="lower right", columnspacing=0.5)
 plt.xlabel(r"Multipole $\ell$", fontsize=9)
 plt.ylabel(r"$D_\ell^{EE}$ $(\mu K^2)$", fontsize=9)
 plt.tight_layout()
-plt.savefig(opj("images", "ghost_diffspectra_dust_red.pdf"), dpi=200, bbox_inches="tight")
+plt.savefig(opj("images", "ghost_diffspectra_dust_red_bincv.pdf"), dpi=200, 
+    bbox_inches="tight")
 
 ### Residual vs ideal HWP for dust maps
 f9, ax9 = plt.subplots(4, 3, sharex=True, sharey=True, figsize=(7,4.2))
@@ -158,7 +174,14 @@ for i, hw in enumerate(hwp_n):
                 color=cal_color[k], marker=cal_mkrs[k], markersize=2, 
                 label=cal_label[k])
 
-        ax9[j,i].plot(ll, lldfac*cvEE/0.7, c="tab:purple")
+        bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+                return_error=True)
+        ax9[j,i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+                color="tab:purple", marker="none")
+        bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+                return_error=True)
+        ax9[j,i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+                color="tab:pink", marker="none")
         ax9[j,i].tick_params(labelsize=9)
 
         if i==2:
@@ -179,7 +202,8 @@ ax9[0,2].set_title("5BR", fontsize=9)
 f9.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.53, x=0.04)
 f9.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.05)
 f9.tight_layout(w_pad=0.1, h_pad=0.2)
-plt.savefig(opj("images","binned_dust_spectra_hwp_difference_red.pdf"), bbox_inches="tight")
+plt.savefig(opj("images","binned_dust_spectra_hwp_difference_red_bincv.pdf"), 
+    bbox_inches="tight")
 
 ### Difference from ideal HWP and Gaussian beam
 f11, ax11 = plt.subplots(4, 3, sharex=True, sharey=True, figsize=(7,4.2))
@@ -202,7 +226,14 @@ for i, hw in enumerate(hwp_n):
             ax11[j,i].errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
                 color=cal_color[k], marker=cal_mkrs[k], markersize=2, 
                 label=cal_label[k])
-        ax11[j,i].plot(ll, lldfac*cvEE/0.7, c="tab:purple") 
+        bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+                return_error=True)
+        ax11[j,i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+                color="tab:purple", marker="none")
+        bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+                return_error=True)
+        ax11[j,i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+                color="tab:pink", marker="none")
 
         if i==2:
             ax11[j,2].set_ylabel(beam_names_full[j], fontsize=9)
@@ -223,7 +254,7 @@ ax11[0,2].set_title("5BR", fontsize=9)
 f11.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.05)
 f11.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.53, x=0.04)
 f11.tight_layout(w_pad=0.1, h_pad=0.2)
-plt.savefig(opj("images","binned_dust_spectra_difference_from_idegauss_red.pdf"), 
+plt.savefig(opj("images","binned_dust_spectra_difference_from_idegauss_red_bincv.pdf"), 
     dpi=180, bbox_inches="tight")
 
 plt.show()

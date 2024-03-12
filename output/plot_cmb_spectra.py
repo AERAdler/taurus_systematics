@@ -8,6 +8,8 @@ from scipy import stats
 opj = os.path.join
 from matplotlib.ticker import AutoMinorLocator, MultipleLocator, LogLocator, NullFormatter
 
+plt.rc('xtick', labelsize=9)
+plt.rc('ytick', labelsize=9)
 
 def bin_spectrum(cls, lmin=2, lmax=None, binwidth=18, return_error=False):
     """
@@ -87,17 +89,21 @@ for i, ax in enumerate(ax6.flat):
             ell = np.arange(spec.shape[1])
             dfac = 0.5*ell*(ell+1)/np.pi
 
-            bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+            bell, bDl, bDle = bin_spectrum(spec*dfac, lmin=2, 
                 binwidth=binw, return_error=True)
             bell_offset = (2*j-1)/9.*binw
-            ax.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
+            ax.errorbar(bell+bell_offset, bDl[1], yerr=bDle[1], ls="none", 
                 color=cal_color[j], marker=cal_mkrs[j], markersize=2, 
                 label=cal_label[j])
-    ax.plot(ll, lldfac*cvEE/0.7, c="tab:purple")
+    bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+        return_error=True)
+    ax.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:purple", marker="none")
+    bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+        return_error=True)
+    ax.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:pink", marker="none")
 
-    ax.set_ylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9)
-
-ax6[2].set_xlabel(r"Multipole $\ell$", fontsize=9)
 ax6[0].set_xlim(2.,102.)
 ax6[0].set_ylim(5e-7, 5e-2)
 ax6[0].set_yscale("log")
@@ -105,8 +111,10 @@ ax6[0].yaxis.set_major_locator(LogLocator(100))
 ax6[0].yaxis.set_minor_locator(LogLocator(100, subs=(0.1,)))
 ax6[0].yaxis.set_minor_formatter(NullFormatter())
 ax6[2].legend(frameon=False, ncol=3, fontsize=9, columnspacing=0.5, handletextpad=0.1)
+f6.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.07)
+f6.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.57, x=0.07)
 f6.tight_layout(h_pad=0.2)
-plt.savefig(opj("images","binned_cmb_spectra_difference_from_gauss_red.pdf"), dpi=180, bbox_inches="tight")
+plt.savefig(opj("images","binned_cmb_spectra_difference_from_gauss_red_bincv.pdf"), dpi=180, bbox_inches="tight")
 
 
 ### Ghost beam
@@ -119,21 +127,28 @@ for i , bt in enumerate(beam_type):
     ell = np.arange(spec.shape[1])
     dfac = 0.5*ell*(ell+1)/np.pi
 
-    bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+    bell, bDl, bDle = bin_spectrum(spec*dfac, lmin=2, 
         binwidth=binw, return_error=True)
     bell_offset = (2*i-3)/9.*binw
-    plt.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], label=beam_names_full[i],
+    plt.errorbar(bell+bell_offset, bDl[1], yerr=bDle[1], label=beam_names_full[i],
             ls="none", color=beam_colors[i], markersize=3, marker=beam_mkrs[i])
 
-plt.plot(ll, lldfac*cvEE, c="tab:purple")
+bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+        return_error=True)
+plt.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:purple", marker="none")
+bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+        return_error=True)
+plt.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:pink", marker="none")
 plt.xlim(2,100)
 plt.ylim(5e-7, 0.05)
 plt.yscale("log")
-plt.legend(frameon=False, ncol=2, fontsize=9, loc="upper center", columnspacing=0.5)
+plt.legend(frameon=False, ncol=1, fontsize=9, loc="lower right", columnspacing=0.5)
 plt.xlabel(r"Multipole $\ell$", fontsize=9)
 plt.ylabel(r"$D_\ell^{EE}$ $(\mu K^2)$", fontsize=9)
 plt.tight_layout()
-plt.savefig(opj("images", "ghost_diffspectra_cmb_red.pdf"), dpi=200, bbox_inches="tight")
+plt.savefig(opj("images", "ghost_diffspectra_cmb_red_bincv.pdf"), dpi=200, bbox_inches="tight")
 
 
 ### Pointing
@@ -151,29 +166,33 @@ for i, ax in enumerate(ax8.flat):
         ell = np.arange(spec.shape[1])
         dfac = 0.5*ell*(ell+1)/np.pi
 
-        bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+        bell, bDl, bDle = bin_spectrum(spec*dfac, lmin=2, 
             binwidth=binw, return_error=True)
         bell_offset = (2*j-3)/9.*binw
-        ax.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], 
+        ax.errorbar(bell+bell_offset, bDl[1], yerr=bDle[1], 
             label=beam_names_full[j], ls="none", color=beam_colors[j], 
             markersize=4, marker=beam_mkrs[j])
-    ax.plot(ll, lldfac*cvEE/0.7, c="tab:purple")
-    ax.text(20, 0.01, err_labels[i], fontsize=9)
+    bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+        return_error=True)
+    ax.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:purple", marker="none")
+    bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+        return_error=True)
+    ax.errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:pink", marker="none")
+    ax.text(15, 0.01, err_labels[i], fontsize=9)
     ax.set_xlim(2,100)
     ax.set_yscale("log")
     ax.set_ylim(5e-7, 5e-2)
 
 ax8[1,1].legend(frameon=False, ncol=2, fontsize=9, handletextpad=0.1)
-ax8[1,0].set_xlabel(r"Multipole $\ell$", fontsize=9)
-ax8[1,1].set_xlabel(r"Multipole $\ell$", fontsize=9)
-ax8[0,0].set_ylabel(r"$D_\ell^{EE}$ $(\mu K^2)$", fontsize=9)
-ax8[1,0].set_ylabel(r"$D_\ell^{EE}$ $(\mu K^2)$", fontsize=9)
-ax8[0,0].yaxis.set_major_locator(LogLocator(100))
-ax8[0,0].yaxis.set_minor_locator(LogLocator(100, subs=(0.1,)))
-ax8[0,0].yaxis.set_minor_formatter(NullFormatter())
 
+ax8[0,0].yaxis.set_major_locator(LogLocator(10))
+ax8[0,0].yaxis.set_minor_formatter(NullFormatter())
+f8.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.05)
+f8.supylabel(r"$D_\ell^{EE}$ $(\mu K^2)$", fontsize=9, y=0.53, x=0.04)
 f8.tight_layout(w_pad=0.2, h_pad=0.2)
-plt.savefig(opj("images", "pointing_diffspectra.pdf"), 
+plt.savefig(opj("images", "pointing_diffspectra_bincv.pdf"), 
     dpi=200, bbox_inches="tight")
 
 
@@ -193,17 +212,23 @@ for i, hw in enumerate(hwp_n):
             ell = np.arange(spec.shape[1])
             dfac = 0.5*ell*(ell+1)/np.pi
 
-            bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+            bell, bDl, bDle = bin_spectrum(spec*dfac, lmin=2, 
                 binwidth=binw, return_error=True)
             bell_offset = 0.25*(k-1)*binw
-            ax9[j,i].errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
+            ax9[j,i].errorbar(bell+bell_offset, bDl[1], yerr=bDle[1], ls="none", 
                 color=cal_color[k], marker=cal_mkrs[k], markersize=2, 
                 label=cal_label[k])
 
-        ax9[j,i].plot(ll, lldfac*cvEE/0.7, c="tab:purple")
+        bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+            return_error=True)
+        ax9[j,i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+            color="tab:purple", marker="none")
+        bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+            return_error=True)
+        ax9[j,i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+            color="tab:pink", marker="none")
         ax9[j,i].tick_params(labelsize=9)
-        if i==0:
-            ax9[j,0].set_ylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9)
+
         if i==2:
             ax9[j,2].set_ylabel(beam_names_full[j], fontsize=9)
             ax9[j,2].yaxis.set_label_position("right")
@@ -219,11 +244,10 @@ ax9[0,1].legend(frameon=False, ncol=2, fontsize=9, columnspacing=0.5,
 ax9[0,0].set_title("1BR", fontsize=9)
 ax9[0,1].set_title("3BR", fontsize=9)
 ax9[0,2].set_title("5BR", fontsize=9)
-ax9[3,0].set_xlabel(r"Multipole $\ell$", fontsize=9)
-ax9[3,1].set_xlabel(r"Multipole $\ell$", fontsize=9)
-ax9[3,2].set_xlabel(r"Multipole $\ell$", fontsize=9)
+f9.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.53, x=0.04)
+f9.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.05)
 f9.tight_layout(w_pad=0.1, h_pad=0.2)
-plt.savefig(opj("images","binned_cmb_spectra_hwp_difference_red.pdf"), bbox_inches="tight")
+plt.savefig(opj("images","binned_cmb_spectra_hwp_difference_red_bincv.pdf"), bbox_inches="tight")
 
 
 ### HWP rotation angle error
@@ -238,15 +262,22 @@ for i, hw in enumerate(hwp_n):
             ell = np.arange(spec.shape[1])
             dfac = 0.5*ell*(ell+1)/np.pi
 
-            bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+            bell, bDl, bDle = bin_spectrum(spec*dfac, lmin=2, 
                 binwidth=binw, return_error=True)
             bell_offset = 0.25*(j-1)*binw
-            ax10[i].errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
+            ax10[i].errorbar(bell+bell_offset, bDl[1], yerr=bDle[1], ls="none", 
                 color=cal_color[j], marker=cal_mkrs[j], markersize=2, 
                 label=cal_label[j])
     ax10[i].text(12, 0.007, str(hw)+"BR", fontsize=9)
-    ax10[i].plot(ll, lldfac*cvEE/0.7, c="tab:purple")
-    ax10[i].set_ylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9)
+    bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+        return_error=True)
+    ax10[i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:purple", marker="none")
+    bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+        return_error=True)
+    ax10[i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+        color="tab:pink", marker="none")
+
     ax10[i].tick_params(labelsize=9)
     ax10[i].set_xlim(2.,102.)
     ax10[i].set_ylim(5e-7, 5e-2)
@@ -256,9 +287,10 @@ for i, hw in enumerate(hwp_n):
     ax10[i].yaxis.set_minor_formatter(NullFormatter())
 
 ax10[1].legend(frameon=False, ncol=3, fontsize=9, columnspacing=0.5, handletextpad=0.1)
-ax10[2].set_xlabel(r"Multipole $\ell$", fontsize=9)
+f10.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.07)
+f10.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.57, x=0.07)
 f10.tight_layout(h_pad=0.2)
-plt.savefig(opj("images","binned_cmb_spectra_difference_hwp_misang.pdf"), dpi=180, bbox_inches="tight")
+plt.savefig(opj("images","binned_cmb_spectra_difference_hwp_misang_bincv.pdf"), dpi=180, bbox_inches="tight")
 
 
 ### Difference from ideal HWP and Gaussian beam
@@ -276,20 +308,26 @@ for i, hw in enumerate(hwp_n):
             ell = np.arange(spec.shape[1])
             dfac = 0.5*ell*(ell+1)/np.pi
 
-            bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+            bell, bDl, bDle = bin_spectrum(spec*dfac, lmin=2, 
                 binwidth=binw, return_error=True)
             bell_offset = 0.25*(k-1)*binw
-            ax11[j,i].errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
+            ax11[j,i].errorbar(bell+bell_offset, bDl[1], yerr=bDle[1], ls="none", 
                 color=cal_color[k], marker=cal_mkrs[k], markersize=2, 
                 label=cal_label[k])
-        ax11[j,i].plot(ll, lldfac*cvEE/0.7, c="tab:purple") 
-            #, label=r"c.v., $f_{sky}=0.7$")
-        if i==0:
-            ax11[j,0].set_ylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9)
+        bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.7, lmin=2, binwidth=binw, 
+            return_error=True)
+        ax11[j,i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+            color="tab:purple", marker="none")
+        bell, bDl, bDle = bin_spectrum(lldfac*cvEE/0.4, lmin=2, binwidth=binw, 
+            return_error=True)
+        ax11[j,i].errorbar(bell, bDl, yerr=bDle, xerr=0.5*binw, ls="none", 
+            color="tab:pink", marker="none") 
+
         if i==2:
             ax11[j,2].set_ylabel(beam_names_full[j], fontsize=9)
             ax11[j,2].yaxis.set_label_position("right")
         ax11[j,i].tick_params(labelsize=9)
+
 ax11[0,0].set_xlim(2.,102.)
 ax11[0,0].set_ylim(5e-7, 5e-2)
 ax11[0,0].set_yscale("log")
@@ -301,11 +339,10 @@ ax11[0,1].legend(frameon=False, ncol=2, fontsize=9, columnspacing=0.5,
 ax11[0,0].set_title("1BR", fontsize=9)
 ax11[0,1].set_title("3BR", fontsize=9)
 ax11[0,2].set_title("5BR", fontsize=9)
-ax11[3,0].set_xlabel(r"Multipole $\ell$", fontsize=9)
-ax11[3,1].set_xlabel(r"Multipole $\ell$", fontsize=9)
-ax11[3,2].set_xlabel(r"Multipole $\ell$", fontsize=9)
+f11.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.05)
+f11.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.53, x=0.04)
 f11.tight_layout(w_pad=0.1, h_pad=0.2)
-plt.savefig(opj("images","binned_cmb_spectra_difference_from_idegauss_red.pdf"), 
+plt.savefig(opj("images","binned_cmb_spectra_difference_from_idegauss_red_bincv.pdf"), 
     dpi=180, bbox_inches="tight")
 
 plt.show()
