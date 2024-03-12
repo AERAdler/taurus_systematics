@@ -6,15 +6,10 @@ import os
 from matplotlib import colormaps as cm
 from scipy import stats
 opj = os.path.join
+from matplotlib.ticker import AutoMinorLocator, MultipleLocator, LogLocator, NullFormatter
 
-def bin_cl(cl, binw):
-
-    lmax = cl.shape[0]-1
-    bins = np.arange(2, lmax, binw)
-    indxs = np.digitize(ell, bins)
-    binned_cl = np.zeros_like(bins, dtype=float)
-    binned_cl[indxs-1] += cl/binw
-    return binned_cl
+plt.rc('xtick', labelsize=9)
+plt.rc('ytick', labelsize=9)
 
 def bin_spectrum(cls, lmin=2, lmax=None, binwidth=18, return_error=False):
     """
@@ -57,247 +52,178 @@ def bin_spectrum(cls, lmin=2, lmax=None, binwidth=18, return_error=False):
         return ellb, clsb, clse
     return ellb, clsb
 
+
 hwp_n = [1,3,5]
-beam_type = ["gauss", "gaussside", "po", "poside"]
-beam_names_full = ["Gaussian", "Gaussian+sidelobe", "PO", "PO+sidelobe"]
+beam_type = ["33gauss", "wingfit", "po", "poside"]
+beam_names_full = ["Gaussian", "Fitted", "PO", "PO+sidelobe"]
 ls = ["-", "--"]
-plt.figure(1, figsize=(12,6))
-for i, hw in enumerate(hwp_n):
-    for j, bt in enumerate(beam_type):
-        filename = "dust_BR{}_fp2_".format(hw) + bt + "_150avg_cl.npy"
-        label = str(hw)+" layer, "+beam_names_full[j]
-        spec = np.load(opj("dust_sims", "spectra", filename))
-        ell = np.arange(spec.shape[1])
-        dfac = 0.5*ell*(ell+1)/np.pi
-        plt.plot(ell[2:], dfac[2:]*spec[1,2:], c=cm["tab20"](i/10 + 0.05*(j>1)), 
-            ls=ls[j%2], label=label)
-
-input_spec = np.load(opj("dust_sims", "spectra", "dustinput_150avg_cl.npy"))
-plt.plot(ell[2:], dfac[2:]*input_spec[1,2:], "k:", label="Input spectrum")
-ideal_spec = np.load(opj("dust_sims", "spectra", "dust_ideal_fp2_gauss_150avg_cl.npy"))
-plt.plot(ell[2:], dfac[2:]*ideal_spec[1,2:], "k-.", label="Ideal simulation")
-
-plt.legend(ncol=3, frameon=False)
-plt.xlim(0.,40)
-plt.ylim(-0.1,1.4)
-plt.xlabel(r"Multipole $\ell$")
-plt.ylabel(r"$D_\ell^{{EE}}$")
-plt.savefig(opj("images","dust_spectra.png"), dpi=180)
-
-
-plt.figure(2, figsize=(12,6))
-for i, hw in enumerate(hwp_n):
-    for j, bt in enumerate(beam_type):
-        filename = "dust_BR{}_fp2_".format(hw) + bt + "_150avg_diffideal_cl_calno.npy"
-        label = str(hw)+" layer, "+beam_names_full[j]
-        spec = np.load(opj("dust_sims", "spectra", filename))
-        ell = np.arange(spec.shape[1])
-        dfac = 0.5*ell*(ell+1)/np.pi
-        plt.plot(ell[2:], dfac[2:]*spec[1,2:], c=cm["tab20"](i/10 + 0.05*(j>1)), 
-            ls=ls[j%2], label=label)
-
-plt.legend(ncol=3, frameon=False)
-plt.xlim(0.,40)
-plt.ylim(-0.005,0.015)
-plt.xlabel(r"Multipole $\ell$")
-plt.ylabel(r"$D_\ell^{{EE}}$")
-plt.title("Power spectrum of difference maps, no gain calibration")
-plt.savefig(opj("images","dustdiff_spectra.png"), dpi=180)
-
-
-plt.figure(3, figsize=(12,6))
-for i, hw in enumerate(hwp_n):
-    for j, bt in enumerate(beam_type):
-        filename = "dust_BR{}_fp2_".format(hw) + bt + "_150avg_diffideal_cl_calTT.npy"
-        label = str(hw)+" layer, "+beam_names_full[j]
-        spec = np.load(opj("dust_sims", "spectra", filename))
-        ell = np.arange(spec.shape[1])
-        dfac = 0.5*ell*(ell+1)/np.pi
-        plt.plot(ell[2:], dfac[2:]*spec[1,2:], c=cm["tab20"](i/10 + 0.05*(j>1)), 
-            ls=ls[j%2], label=label)
-
-plt.legend(ncol=3, frameon=False)
-plt.xlim(0.,40)
-plt.ylim(-0.005,0.01)
-plt.xlabel(r"Multipole $\ell$")
-plt.ylabel(r"$D_\ell^{{EE}}$")
-plt.title("Power spectrum of difference maps, TT gain calibration")
-plt.savefig(opj("images","dustdiffTT_spectra.png"), dpi=180)
-
-
-plt.figure(4, figsize=(12,6))
-for i, hw in enumerate(hwp_n):
-    for j, bt in enumerate(beam_type):
-        filename = "dust_BR{}_fp2_".format(hw) + bt + "_150avg_diffideal_cl_calEE.npy"
-        label = str(hw)+" layer, "+beam_names_full[j]
-        spec = np.load(opj("dust_sims", "spectra", filename))
-        ell = np.arange(spec.shape[1])
-        dfac = 0.5*ell*(ell+1)/np.pi
-        plt.plot(ell[2:], dfac[2:]*spec[1,2:], c=cm["tab20"](i/10 + 0.05*(j>1)), 
-            ls=ls[j%2], label=label)
-
-plt.legend(ncol=3, frameon=False)
-plt.xlim(0.,40)
-plt.ylim(-0.003,0.003)
-plt.xlabel(r"Multipole $\ell$")
-plt.ylabel(r"$D_\ell^{{EE}}$")
-plt.title("Power spectrum of difference maps, EE gain calibration")
-plt.savefig(opj("images","dustdiffEE_spectra.png"), dpi=180)
-
-
-####Binned
-
-binw = 10
-lmax = 767
-Bl = hp.gauss_beam(np.radians(.5), lmax=lmax)
-sigma_tau = np.load(opj("..","sigma_tau_cl_target.npy"))
-f5, ax5 = plt.subplots(4, 3, sharex=True, sharey=True, figsize=(12,8))
-
 cal_type = ["no", "TT", "EE"]
 cal_label = ["None", "TT", "EE"]
 cal_color = ["tab:blue", "tab:orange", "tab:green"]
-mkrs = ["o", "s", "v"]
-for i, hw in enumerate(hwp_n):
-    for j, bt in enumerate(beam_type):
-        for k, ct in enumerate(cal_type):
-            filename = "dust_BR{}_fp2_{}_150avg_diffideal_cl_cal{}.npy".format(
-                                                                    hw, bt, ct)
-            spec = np.load(opj("dust_sims", "spectra", filename))
-            ell = np.arange(spec.shape[1])
-            dfac = 0.5*ell*(ell+1)/np.pi
+cal_mkrs = ["o", "s", "v"]
 
-            bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
-                binwidth=binw, return_error=True)
-            bell_offset = 0.25*(k-1)*binw
-            ax5[j,i].errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
-                color=cal_color[k], marker=mkrs[k], markersize=4, 
-                label=cal_label[k])
-        ax5[j,i].plot(ell[2:], dfac[2:]*sigma_tau, c="tab:purple", 
-            label=r"$\sigma(\tau)=0.003$")
-        if i==0:
-            ax5[j,0].set_ylabel(r"$D_\ell^{{EE}}$")
-        if i==2:
-            ax5[j,2].set_ylabel(beam_names_full[j])
-            ax5[j,2].yaxis.set_label_position("right")
+beam_colors =  ["tab:blue", "tab:orange", "tab:green", "tab:red"]
+beam_mkrs = ["o", "s", "v", "^"]
 
-ax5[0,0].set_xlim(2.,200.)
-ax5[0,0].set_ylim(1e-8, 1e-1)
-ax5[0,0].set_yscale("log")
-ax5[0,2].legend(frameon=False, ncol=2)
-ax5[0,0].set_title("1BR")
-ax5[0,1].set_title("3BR")
-ax5[0,2].set_title("5BR")
-ax5[3,0].set_xlabel(r"Multipole $\ell$")
-ax5[3,1].set_xlabel(r"Multipole $\ell$")
-ax5[3,2].set_xlabel(r"Multipole $\ell$")
-f5.suptitle("Residual vs ideal HWP for Dust maps")
-f5.tight_layout()
-plt.savefig(opj("images","binned_dust_spectra_hwp_difference.png"), dpi=180)
+binw = 5
+lmax = 767
 
-f6, ax6 = plt.subplots(2, 2, sharex=True, sharey=True, figsize=(12,8))
-hwp_color = ["tab:blue", "tab:orange", "tab:green"]
-mkrs = ["o", "s", "v"]
-input_spec = np.load(opj("dust_sims", "spectra", "dustinput_150avg_cl.npy"))
+ll, cvEE = np.load(opj("..", "cv_EE_fullsky.npy"))
+lldfac = 0.5*ll*(ll+1)/np.pi
 
+
+### Beam model error
+f6, ax6 = plt.subplots(3, sharex=True, sharey=True, figsize=(10/3,3.5))
 for i, ax in enumerate(ax6.flat):
-    bt = beam_type[i]
-    ax.set_title(beam_names_full[i])
-    
-    ideal_filename = "dust_ideal_fp2_{}_150avg_cl.npy".format(bt)
-    ideal_spec = np.load(opj("dust_sims", "spectra", ideal_filename))
-    ell = np.arange(ideal_spec.shape[1])
-    ax.plot(ell, 0.11*(ell/80.)**-0.42, "k", label=r"$0.11(\ell/80)^{{-0.42}}$")
-    dfac = 0.5*ell*(ell+1)/np.pi
-    belli, bCli, bClie = bin_spectrum(ideal_spec*dfac, lmin=2, 
-            binwidth=binw, return_error=True)
-    ax.errorbar(belli-binw/3., bCli[1], yerr=bClie[1], ls="none", 
-            color="gray", marker="*", markersize=4, label="Ideal HWP")
-
-    for j, hw in enumerate(hwp_n):
-        filename = "dust_BR{}_fp2_{}_150avg_cl.npy".format(hw, bt)
-        spec = np.load(opj("dust_sims", "spectra", filename))
-        bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
-            binwidth=binw, return_error=True)
-
-        bell_offset = (2*j-1)/9.*binw
-        ax.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
-            color=hwp_color[j], marker=mkrs[j], markersize=4, label=str(hw)+"BR")
-
-    if i%2==0:
-        ax.set_ylabel(r"$D_\ell^{{EE}}$")
-    if i/2==1:
-        ax.set_xlabel(r"Multipole $\ell$")
-
-    
-
-
-ax6[0,0].set_xlim(2.,200.)
-ax6[0,0].set_ylim(0.01, 1.)
-ax6[0,0].set_yscale("log")
-ax6[1,1].legend(frameon=False, ncol=1)
-f6.suptitle("Dust simulations")
-f6.tight_layout()
-
-plt.savefig(opj("images","binned_dust_spectra_hwp_compare.png"), dpi=180)
-
-#Difference from ideal HWP with Gaussian beam
-f7, ax7 = plt.subplots(4, 3, sharex=True, sharey=True, figsize=(12,8))
-for i, hw in enumerate(hwp_n):
-    for j, bt in enumerate(beam_type):
-        for k, ct in enumerate(cal_type):
-            filename = "dust_BR{}_fp2_{}_150avg_diffidealgauss_cl_cal{}.npy".format(
-                                                                    hw, bt, ct)
-            spec = np.load(opj("dust_sims", "spectra", filename))
-            ell = np.arange(spec.shape[1])
-            dfac = 0.5*ell*(ell+1)/np.pi
-
-            bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
-                binwidth=binw, return_error=True)
-            bell_offset = 0.25*(k-1)*binw
-            ax7[j,i].errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
-                color=cal_color[k], marker=mkrs[k], markersize=4, 
-                label=cal_label[k])
-        ax7[j,i].plot(ell[2:], dfac[2:]*sigma_tau, c="tab:purple", 
-            label=r"$\sigma(\tau)=0.003$")
-        if i==0:
-            ax7[j,0].set_ylabel(r"$D_\ell^{{EE}}$")
-        if i==2:
-            ax7[j,2].set_ylabel(beam_names_full[j])
-            ax7[j,2].yaxis.set_label_position("right")
-
-ax7[0,0].set_xlim(2.,200.)
-ax7[0,0].set_ylim(1e-8, 1e-1)
-ax7[0,0].set_yscale("log")
-ax7[0,2].legend(frameon=False, ncol=3)
-ax7[0,0].set_title("1BR")
-ax7[0,1].set_title("3BR")
-ax7[0,2].set_title("5BR")
-ax7[3,0].set_xlabel(r"Multipole $\ell$")
-ax7[3,1].set_xlabel(r"Multipole $\ell$")
-ax7[3,2].set_xlabel(r"Multipole $\ell$")
-f7.suptitle("Residual vs ideal HWP and gaussian beam for dust maps")
-f7.tight_layout()
-plt.savefig(opj("images","binned_dust_spectra_hwp_difference_from_gauss.png"), dpi=180)
-
-"""
-plt.figure(5, figsize=(12,6))
-for i, hw in enumerate(hwp_n):
-    for j, bt in enumerate(beam_type):
-        filename = "dust_BR{}_".format(hw) + bt + "_150avg_diffideal_cl_calEB.npy"
-        label = str(hw)+" layer, "+beam_names_full[j]
+    bt = beam_type[i+1]
+    ax.text(10, 1e-2, beam_names_full[i+1], fontsize=9)
+    ax.tick_params(labelsize=9)
+    if i<2:
+        ax.tick_params(axis="x", direction="in")
+    for j, ct in enumerate(cal_type):
+        if "po" in bt:
+            filename = "dust_ideal_fp2_{}_150avg_diffidealgauss_cl_cal{}.npy".format(bt, ct)
+        else:
+            filename = "dust_ideal_{}_150avg_diffidealgauss_cl_cal{}.npy".format(bt, ct)
         spec = np.load(opj("dust_sims", "spectra", filename))
         ell = np.arange(spec.shape[1])
         dfac = 0.5*ell*(ell+1)/np.pi
-        plt.plot(ell[2:], dfac[2:]*spec[1,2:], c=cm["tab20"](i/10 + 0.05*(j>1)), 
-            ls=ls[j%2], label=label)
 
-plt.legend(ncol=3, frameon=False)
-plt.xlim(0.,40)
-plt.ylim(-0.2,0.4)
-plt.xlabel(r"Multipole $\ell$")
-plt.ylabel(r"$D_\ell^{{EE}}$")
-plt.title("Power spectrum of difference maps, EB gain calibration")
-plt.savefig(opj("images","dustdiffEB_spectra.png"), dpi=180)
-"""
+        bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+            binwidth=binw, return_error=True)
+        bell_offset = (2*j-1)/9.*binw
+        ax.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
+            color=cal_color[j], marker=cal_mkrs[j], markersize=2, label=cal_label[j])
+
+    ax.plot(ll, lldfac*cvEE/0.7, c="tab:purple")
+
+ax6[0].set_xlim(2.,102.)
+ax6[0].set_ylim(5e-7, 5e-2)
+ax6[0].set_yscale("log")
+ax6[0].yaxis.set_major_locator(LogLocator(100))
+ax6[0].yaxis.set_minor_locator(LogLocator(100, subs=(0.1,)))
+ax6[0].yaxis.set_minor_formatter(NullFormatter())
+ax6[2].legend(frameon=False, ncol=3, loc="lower right", fontsize=9, columnspacing=0.5, handletextpad=0.1, bbox_to_anchor=(0.99,-0.1))
+f6.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.07)
+f6.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.57, x=0.07)
+f6.tight_layout(h_pad=0.2)
+plt.savefig(opj("images","binned_dust_spectra_difference_from_gauss_red.pdf"), dpi=180, bbox_inches="tight")
+
+### Ghost beam
+plt.figure(7, figsize=(10./3, 10./3.))
+
+for i , bt in enumerate(beam_type):
+
+    diff_file = "dust_ghost_1e-2_fp2_{}_150avg_diffideal_cl_calno.npy".format(bt)
+    spec = np.load(opj("dust_sims", "spectra", diff_file))
+    ell = np.arange(spec.shape[1])
+    dfac = 0.5*ell*(ell+1)/np.pi
+
+    bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+        binwidth=binw, return_error=True)
+    bell_offset = (2*i-3)/9.*binw
+    plt.errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], label=beam_names_full[i],
+            ls="none", color=beam_colors[i], markersize=3, marker=beam_mkrs[i])
+
+plt.plot(ll, lldfac*cvEE, c="tab:purple")
+plt.xlim(2,100)
+plt.ylim(5e-7, 0.05)
+plt.yscale("log")
+plt.legend(frameon=False, ncol=2, fontsize=9, loc="upper center", columnspacing=0.5)
+plt.xlabel(r"Multipole $\ell$", fontsize=9)
+plt.ylabel(r"$D_\ell^{EE}$ $(\mu K^2)$", fontsize=9)
+plt.tight_layout()
+plt.savefig(opj("images", "ghost_diffspectra_dust_red.pdf"), dpi=200, bbox_inches="tight")
+
+### Residual vs ideal HWP for dust maps
+f9, ax9 = plt.subplots(4, 3, sharex=True, sharey=True, figsize=(7,4.2))
+
+for i, hw in enumerate(hwp_n):
+    for j, bt in enumerate(beam_type):
+        for k, ct in enumerate(cal_type):
+            if "po" in bt:
+                filename = "dust_BR{}_fp2_{}_150avg_diffideal_cl_cal{}.npy".format(
+                                                                    hw, bt, ct)
+            else:
+                filename = "dust_BR{}_{}_150avg_diffideal_cl_cal{}.npy".format(
+                                                                    hw, bt, ct)
+            spec = np.load(opj("dust_sims", "spectra", filename))
+            ell = np.arange(spec.shape[1])
+            dfac = 0.5*ell*(ell+1)/np.pi
+
+            bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+                binwidth=binw, return_error=True)
+            bell_offset = 0.25*(k-1)*binw
+            ax9[j,i].errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
+                color=cal_color[k], marker=cal_mkrs[k], markersize=2, 
+                label=cal_label[k])
+
+        ax9[j,i].plot(ll, lldfac*cvEE/0.7, c="tab:purple")
+        ax9[j,i].tick_params(labelsize=9)
+
+        if i==2:
+            ax9[j,2].set_ylabel(beam_names_full[j], fontsize=9)
+            ax9[j,2].yaxis.set_label_position("right")
+
+ax9[0,0].set_xlim(2.,102.)
+ax9[0,0].set_ylim(5e-7, 5e-2)
+ax9[0,0].set_yscale("log")
+ax9[0,0].yaxis.set_major_locator(LogLocator(100))
+ax9[0,0].yaxis.set_minor_locator(LogLocator(100, subs=(0.1,)))
+ax9[0,0].yaxis.set_minor_formatter(NullFormatter())
+ax9[0,1].legend(frameon=False, ncol=3, fontsize=9, columnspacing=0.5, 
+                handletextpad=0.1, borderaxespad=0.)
+ax9[0,0].set_title("1BR", fontsize=9)
+ax9[0,1].set_title("3BR", fontsize=9)
+ax9[0,2].set_title("5BR", fontsize=9)
+f9.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.53, x=0.04)
+f9.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.05)
+f9.tight_layout(w_pad=0.1, h_pad=0.2)
+plt.savefig(opj("images","binned_dust_spectra_hwp_difference_red.pdf"), bbox_inches="tight")
+
+### Difference from ideal HWP and Gaussian beam
+f11, ax11 = plt.subplots(4, 3, sharex=True, sharey=True, figsize=(7,4.2))
+for i, hw in enumerate(hwp_n):
+    for j, bt in enumerate(beam_type):
+        for k, ct in enumerate(cal_type):
+            if "po" in bt:
+                filename = "dust_BR{}_fp2_{}_150avg_diffidealgauss_cl_cal{}.npy".format(
+                                                                    hw, bt, ct)
+            else:
+                filename = "dust_BR{}_{}_150avg_diffidealgauss_cl_cal{}.npy".format(
+                                                                    hw, bt, ct)
+            spec = np.load(opj("dust_sims", "spectra", filename))
+            ell = np.arange(spec.shape[1])
+            dfac = 0.5*ell*(ell+1)/np.pi
+
+            bell, bCl, bCle = bin_spectrum(spec*dfac, lmin=2, 
+                binwidth=binw, return_error=True)
+            bell_offset = 0.25*(k-1)*binw
+            ax11[j,i].errorbar(bell+bell_offset, bCl[1], yerr=bCle[1], ls="none", 
+                color=cal_color[k], marker=cal_mkrs[k], markersize=2, 
+                label=cal_label[k])
+        ax11[j,i].plot(ll, lldfac*cvEE/0.7, c="tab:purple") 
+
+        if i==2:
+            ax11[j,2].set_ylabel(beam_names_full[j], fontsize=9)
+            ax11[j,2].yaxis.set_label_position("right")
+        ax11[j,i].tick_params(labelsize=9)
+
+ax11[0,0].set_xlim(2.,102.)
+ax11[0,0].set_ylim(5e-7, 5e-2)
+ax11[0,0].set_yscale("log")
+ax11[0,0].yaxis.set_major_locator(LogLocator(100))
+ax11[0,0].yaxis.set_minor_locator(LogLocator(100, subs=(0.1,)))
+ax11[0,0].yaxis.set_minor_formatter(NullFormatter())
+ax11[0,1].legend(frameon=False, ncol=3, fontsize=9, columnspacing=0.5, 
+                handletextpad=0.1, borderaxespad=0.)
+ax11[0,0].set_title("1BR", fontsize=9)
+ax11[0,1].set_title("3BR", fontsize=9)
+ax11[0,2].set_title("5BR", fontsize=9)
+f11.supxlabel(r"Multipole $\ell$", fontsize=9, x=0.55, y=0.05)
+f11.supylabel(r"$D_\ell^{{EE}} (\mu K^2)$", fontsize=9, y=0.53, x=0.04)
+f11.tight_layout(w_pad=0.1, h_pad=0.2)
+plt.savefig(opj("images","binned_dust_spectra_difference_from_idegauss_red.pdf"), 
+    dpi=180, bbox_inches="tight")
 
 plt.show()
