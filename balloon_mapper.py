@@ -356,6 +356,7 @@ def run_sim(simname, sky_alm,
     else:
         scan.load_focal_plane(beamdir, btype=btype, no_pairs=no_pairs, 
                               sensitive_freq=freq, file_names=beam_files)
+    #Insert pointing errors
     if point_bias_mode!=0:
         pbdeg = np.array(point_bias)/60.
         if point_bias_mode==1:
@@ -366,10 +367,12 @@ def run_sim(simname, sky_alm,
                        el_bias=pbdeg[1], polang_bias=pbdeg[2])) 
         else:
             raise ValueError("Unknown pointing error mode")
+    #Ghosting
     if add_ghosts:
         ghost_dict = dict(amplitude=ghost_amp)
         scan.create_reflected_ghosts(ghost_tag='refl_ghost',
                                 rand_stdev=0., **ghost_dict)
+    #HWP selection and insert into beamconv as HWP for each beam
     if hwp_model == "ideal":
         pass
     elif "band" in hwp_model:
@@ -864,7 +867,7 @@ def main():
             ell = dl_th[:,0]
             dfac = ell*(ell+1)/(2*np.pi)
             cls = np.zeros((4,dl_th.shape[0]))
-            #Change order to match spice output, let mono and dipole be zero
+            #Change order to match polspice/namaster, let mono and dipole be zero
             cls[0,2:] = dl_th[2:,1]/dfac[2:]#TT
             cls[1,2:] = dl_th[2:,3]/dfac[2:]#EE
             cls[2,2:] = dl_th[2:,4]/dfac[2:]#BB

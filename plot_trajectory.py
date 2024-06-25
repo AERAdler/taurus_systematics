@@ -7,8 +7,8 @@ import cartopy.crs as ccrs
 import shapely.geometry as sgeom
 import cartopy.io.shapereader as shpreader
 
-plt.rc("xtick", labelsize=9)
-plt.rc("ytick", labelsize=9)
+plt.rc("xtick", labelsize=11)
+plt.rc("ytick", labelsize=11)
 
 fig, ax = plt.subplots(2, figsize=(10/3, 3), sharex=True)
 
@@ -47,18 +47,18 @@ for i in range(bpts.size-1):
     ax[0].plot(time3[bpts[i]:bpts[i+1]], -track3[3,bpts[i]:bpts[i+1]], c="tab:green")
 ax[1].plot(time3, track3[2], label="SuperBIT")
 
-ax[0].set_ylabel("Longitude (°)", fontsize=9)
-ax[1].set_ylabel("Latitude (°)", fontsize=9)
-ax[1].set_xlabel("Time from launch (days)", fontsize=9)
+ax[0].set_ylabel("Longitude (°)", fontsize=11)
+ax[1].set_ylabel("Latitude (°)", fontsize=11)
+ax[1].set_xlabel("Time from launch (days)", fontsize=11)
 ax[0].tick_params(axis="x", direction="in")
 ax[0].set_ylim(-180, 180)
 ax[0].set_xlim(0, 51)
-fig.legend(frameon=False, fontsize=9, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.915))
+fig.legend(frameon=False, fontsize=11, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.915))
 plt.tight_layout(h_pad=0.2)
 plt.savefig("trajectory.pdf", bbox_inches="tight", dpi=180)
 
 ### Trajectory on map
-fig2, ax2 = plt.subplots(figsize=(10/3, 10/3), 
+fig2, ax2 = plt.subplots(figsize=(3.7, 3.7), 
     subplot_kw={"projection": ccrs.SouthPolarStereo()})
 ax2.set_extent([-180, 180, -90, -10], crs=ccrs.PlateCarree())
 # Add map features (optional)
@@ -133,7 +133,7 @@ dashed_orange= lines.Line2D([], [], linestyle="--", dashes=(6, 6),
 dashed_green = lines.Line2D([], [], linestyle="--", dashes=(6, 6), 
     color=cmap_tracks(0.2), gapcolor=cmap_tracks(0.25), label="SuperBIT")
 fig2.legend(handles=[dashed_blue, dashed_orange, dashed_green],
-    frameon=False, fontsize=9, ncol=3, loc="lower center", 
-    bbox_to_anchor=(0.5, 0.92))
-plt.savefig("trajectory_map.pdf", bbox_inches="tight", dpi=180)
+    frameon=False, fontsize=11, ncol=3, loc="lower center", 
+    bbox_to_anchor=(0.5, 0.92), columnspacing=1.0)
+plt.savefig("trajectory_map_jcap.pdf", bbox_inches="tight", dpi=180)
 plt.show()

@@ -3,6 +3,7 @@
 import transfer_matrix as tm
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.optimize import minimize_scalar
 
 
 def hwp_band5(center_nu):
@@ -79,6 +80,25 @@ def hwp_band(center_nu):
 
     return thicks, idxs, losses, angles
 
+def d9(nu):
+    beta = 1.48
+    Td = 19.6
+    hkb = 4.799e-11
+    wien_peak = 9.3475e11
+    wien_modi = (wien_peak**beta)*np.exp(-hkb*wien_peak/Td) 
+    return ((nu*1e9)**beta)*np.exp(-hkb*nu*1e9/Td)/wien_modi
+
+def residuals(theta, *args):
+    mm = args[0]
+    nus = args[1]
+    ideal = np.diagflat([1,1,-1,-1])
+    nfreqs = mm.shape[0]
+    pen = np.zeros(nfreqs)
+    for i in range(nfreqs):
+        pen[i] = np.sum(np.abs(rotate_hwp_mueller(mm[i], theta)-ideal))
+    #pen *= d9(nus)
+    return np.sum(pen)
+
 def stack_builder(thicknesses, indices, losses, angles):
     """
     Creates a stack of materials, as defined in transfer_matrix.py
@@ -134,6 +154,7 @@ def rotate_hwp_mueller(M, theta):
 	rm = np.array([[1., 0, 0, 0], [0, cst, -sst, 0], [0, sst, cst, 0], [0,0,0,1]])
 	return rm@M@rp
 
+
 nfsamp = 1401
 t,i,l,a = hwp_band(185)
 stack1 = stack_builder(t,i,l,a)
@@ -148,7 +169,7 @@ freq_range = np.linspace(120, 260, nfsamp)
 
 for i, freq in enumerate(freq_range):
 	mm1[i] = compute_mueller(stack1, freq, 0.)
-	mm3[i] = rotate_hwp_mueller(compute_mueller(stack3, freq, 0.), -32.21)
+	mm3[i] = rotate_hwp_mueller(compute_mueller(stack3, freq, 0.), -32.67)
 	mm5[i] = compute_mueller(stack5, freq, 0.)
 
 #Transmission parameters
@@ -172,34 +193,45 @@ phi41 = 0.25*np.degrees(np.arctan2(mm1[:,1,2]+mm1[:,2,1], mm1[:,1,1]-mm1[:,2,2])
 phi43 = 0.25*np.degrees(np.arctan2(mm3[:,1,2]+mm3[:,2,1], mm3[:,1,1]-mm3[:,2,2]))
 phi45 = 0.25*np.degrees(np.arctan2(mm5[:,1,2]+mm5[:,2,1], mm5[:,1,1]-mm5[:,2,2]))
 
+band_150 = freq_range[np.abs(freq_range[:]-150)<20]
+mm3_150 = np.zeros((band_150.size, 4,4))
+for i, freq in enumerate(band_150):
+    mm3_150[i] = compute_mueller(stack3, freq, 0.)
+
+optimized_result = minimize_scalar(residuals, bounds=[32,34], args=(mm3_150, band_150))
+print(optimized_result)
+
+print(np.mean(phi43[np.abs(freq_range[:]-150)<20]))
 epsi1 = t41/(t0i1+t0q1)
 epsi3 = t43/(t0i3+t0q3)
 epsi5 = t45/(t0i5+t0q5)
 
-f1, ax1 = plt.subplots(2, figsize=(3.5, 3.5), sharex=True)
+f1, ax1 = plt.subplots(1,2, figsize=(440/72, 2.), sharex=True)
 ax1[0].plot(freq_range, epsi1, label="1BR")
 ax1[0].plot(freq_range, epsi3, label="3BR")
 ax1[0].plot(freq_range, epsi5, label="5BR")
-ax1[0].fill_betweenx([0,1.1], 130, 170, color="tab:grey", alpha=0.5)
-ax1[0].fill_betweenx([0,1.1], 190, 250, color="tab:grey", alpha=0.5)
-ax1[0].set_ylabel("Polarisation efficiency", fontsize=9)
+ax1[0].fill_betweenx([0,1.1], 130, 170, color="tab:grey", alpha=0.5, edgecolor=None)
+ax1[0].fill_betweenx([0,1.1], 190, 250, color="tab:grey", alpha=0.5, edgecolor=None)
+ax1[0].set_ylabel("Polarisation efficiency", fontsize=11)
+ax1[0].set_xlabel("Frequency (GHz)", fontsize=11)
 ax1[0].set_ylim(0.5, 1.05)
 ax1[0].set_xlim(120, 260)
-ax1[0].tick_params(labelsize=9)
+ax1[0].tick_params(labelsize=11)
 
 ax1[1].plot(freq_range, phi41)
 ax1[1].plot(freq_range, phi43)
 ax1[1].plot(freq_range, phi45)
-ax1[1].set_ylabel("Phase shift (°)", fontsize=9)
-ax1[1].set_xlabel("Frequency (GHz)", fontsize=9)
-ax1[1].fill_betweenx([-10,5], 130, 170, color="tab:grey", alpha=0.5)
-ax1[1].fill_betweenx([-10,5], 190, 250, color="tab:grey", alpha=0.5)
+ax1[1].set_ylabel("Phase shift (°)", fontsize=11)
+ax1[1].set_xlabel("Frequency (GHz)", fontsize=11)
+ax1[1].fill_betweenx([-10,5], 130, 170, color="tab:grey", alpha=0.5, edgecolor=None)
+ax1[1].fill_betweenx([-10,5], 190, 250, color="tab:grey", alpha=0.5, edgecolor=None)
 ax1[1].set_ylim(-8,5)
-ax1[1].tick_params(labelsize=9)
-f1.tight_layout()
-f1.legend(frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.53, 0.5), fontsize=9)
-plt.savefig("hwp_fom.pdf", bbox_inches="tight")
-f2, ax2 = plt.subplots(4,4, figsize=(7,7), sharex=True, sharey=True)
+ax1[1].tick_params(labelsize=11)
+f1.tight_layout(h_pad=-0.3)
+f1.legend(frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.53, 0.9), fontsize=11)
+plt.savefig("hwp_fom_jcap.pdf", bbox_inches="tight")
+
+f2, ax2 = plt.subplots(4,4, figsize=(440/72,440/72), sharex=True, sharey=True)
 mideal = np.eye(4)
 mideal[2,2] = -1
 mideal[3,3] = -1
@@ -216,15 +248,15 @@ for i, ax in enumerate(ax2.flat):
 		ax.plot(freq_range, mm3[:, int(i/4), i%4]-mideal[int(i/4), i%4])
 		ax.plot(freq_range, mm5[:, int(i/4), i%4]-mideal[int(i/4), i%4])
 
-	ax.fill_betweenx([-0.5,0.5], 130, 170, color="tab:grey", alpha=0.5)
-	ax.fill_betweenx([-0.5,0.5], 190, 250, color="tab:grey", alpha=0.5)
+	ax.fill_betweenx([-0.5,0.5], 130, 170, color="tab:grey", alpha=0.5, edgecolor=None)
+	ax.fill_betweenx([-0.5,0.5], 190, 250, color="tab:grey", alpha=0.5, edgecolor=None)
 	ax.set_ylim(-0.5, 0.5)
 	ax.set_xlim(120, 260)
-	ax.text(170, 0.4, fr"$M_{{{elem_str}}}$", fontsize=9)
-	ax.tick_params(direction="in", labelsize=9)
-f2.supxlabel("Frequency (GHz)", fontsize=9, x=0.55, y=0.02)
-f2.supylabel("Deviation from ideal HWP", fontsize=9, y=0.53, x=0.04)
-f2.legend(frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.54, 0.96), fontsize=9)
+	ax.text(170, 0.4, fr"$M_{{{elem_str}}}$", fontsize=11)
+	ax.tick_params(direction="in", labelsize=11)
+f2.supxlabel("Frequency (GHz)", fontsize=11, x=0.55, y=0.02)
+f2.supylabel("Deviation from ideal HWP", fontsize=11, y=0.53, x=0.04)
+f2.legend(frameon=False, ncol=3, loc="lower center", bbox_to_anchor=(0.54, 0.945), fontsize=11)
 f2.tight_layout(w_pad=0.2, h_pad=-0.3)
-plt.savefig("hwp_mueller_matrix.pdf", bbox_inches="tight")
+plt.savefig("hwp_mueller_matrix_jcap.pdf", bbox_inches="tight")
 plt.show()
