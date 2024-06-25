@@ -372,6 +372,9 @@ def run_sim(simname, sky_alm,
         ghost_dict = dict(amplitude=ghost_amp)
         scan.create_reflected_ghosts(ghost_tag='refl_ghost',
                                 rand_stdev=0., **ghost_dict)
+    if killfrac !=0.:
+        scan.kill_channels(killfrac=killfrac, rnd_state=seed)
+    
     #HWP selection and insert into beamconv as HWP for each beam
     if hwp_model == "ideal":
         pass
