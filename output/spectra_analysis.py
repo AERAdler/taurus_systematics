@@ -31,7 +31,7 @@ def namaster_estimation(maps, mask):
     nama_mask = mask_apodization(mask, 10.0, apotype='C1')
     nama_cl = np.zeros((6, lmax+1))
     nama_bin = NmtBin(nside, nlb = 1)
-    f2 = NmtField(nama_mask, [maps[1], maps[2]], purify_b=True)#purify option
+    f2 = NmtField(nama_mask, [maps[1], maps[2]], purify_b=False)#purify option
     f0 = NmtField(nama_mask, [maps[0]])
     wsp = NmtWorkspace()
     wsp.compute_coupling_matrix(f0, f0, nama_bin)
@@ -51,14 +51,14 @@ def namaster_estimation(maps, mask):
 
 
 
-def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
-             cal=None, mask_file=None, nside_out=256, lmax=767, 
-             l1=50, l2=200, fwhm=30., plot=False, label=None):
+def analysis(analysis_dir, sim_tag, ide_tag="ideal", ideal_map=None, 
+             input_map=None,cal=None, mask_file=None, nside_out=256, 
+             lmax=767, l1=50, l2=100, fwhm=33.):
     """
     Function to analyze simulation output 
     Arguments
     ---------
-    analyzis_dir : string
+    analysis_dir : string
         Path to the directory in which input maps are located, and where 
         the output spectra and maps directories are.
     sim_tag : string
@@ -66,6 +66,8 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
 
     Keyword arguments
     -----------------
+    ide_tag : string
+        String to append to the name of the resulting spectra (default: "ideal")
     ideal_map : string
         Name of an ideal simulation map the sim_tag map gets 
         differentiated against. (default: None)
@@ -97,10 +99,10 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
 
     mapfilename = "maps_"+sim_tag+".fits"
     fstrs = ["TT", "EE", "BB", "TE", "TB", "EB"]
-    spectra_dir = opj(analyzis_dir, "spectra")
-    maps = hp.read_map(opj(analyzis_dir, mapfilename), field=None)
-    hits = hp.read_map(opj(analyzis_dir, mapfilename.replace("maps_", "hits_")))
-    cond = hp.read_map(opj(analyzis_dir, mapfilename.replace("maps_", "cond_")))
+    spectra_dir = opj(analysis_dir, "spectra")
+    maps = hp.read_map(opj(analysis_dir, mapfilename), field=None)
+    hits = hp.read_map(opj(analysis_dir, mapfilename.replace("maps_", "hits_")))
+    cond = hp.read_map(opj(analysis_dir, mapfilename.replace("maps_", "cond_")))
     maps[:, maps[0]==hp.UNSEEN] = 0.
     maps = hp.ud_grade(maps, nside_out)
     hits = hp.ud_grade(hits, nside_out)
@@ -112,7 +114,7 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     mask[hits==0]=0.
 
     if mask_file:
-        custom_mask = hp.ud_grade(hp.read_map(opj(analyzis_dir, mask_file)), 
+        custom_mask = hp.ud_grade(hp.read_map(opj(analysis_dir, mask_file)), 
                                   nside_out)
         mask *=custom_mask
 
@@ -127,14 +129,13 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
     #Versus ideal
     if ideal_map:
 
-        ideal_maps = hp.read_map(opj(analyzis_dir, ideal_map),
+        ideal_maps = hp.read_map(opj(analysis_dir, ideal_map),
             field=None)
         ideal_maps = hp.ud_grade(ideal_maps, nside_out)
         ideal_maps[:, ideal_maps[0]==hp.UNSEEN] = 0.
         cl_ideal = namaster_estimation(ideal_maps, mask)
         cl_ideal = cl_ideal/bl**2
-        np.save(opj(analyzis_dir, "spectra", 
-                   "{}_cl.npy".format(sim_tag)), cl_ideal)
+        np.save(opj(spectra_dir, "{}_cl.npy".format(sim_tag)), cl_ideal)
             #Compute Cls for the smoothed map, deconvolve
         if cal is not None:
             gain = np.average(cl_ideal[cal, l1:l2]/cl[cal, l1:l2])
@@ -146,15 +147,15 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         diff_ideal_cl = namaster_estimation(diff_ideal, mask)
         diff_ideal_cl = diff_ideal_cl/bl**2
         if cal is not None:
-            np.save(opj(spectra_dir, "{}_diffideal_cl_cal{}.npy".format(
-                 sim_tag, fstrs[cal])), diff_ideal_cl)
+            np.save(opj(spectra_dir, "{}_diff{}_cl_cal{}.npy".format(
+                 sim_tag, ide_tag, fstrs[cal])), diff_ideal_cl)
         else:
-            np.save(opj(spectra_dir, "{}_diffideal_cl_calno.npy".format(
-                 sim_tag)), diff_ideal_cl)
+            np.save(opj(spectra_dir, "{}_diff{}_cl_calno.npy".format(
+                 sim_tag, ide_tag)), diff_ideal_cl)
     gain = 1.
     #Versus input
     if input_map:
-        input_maps = hp.read_map(opj(analyzis_dir, input_map), field=None)
+        input_maps = hp.read_map(opj(analysis_dir, input_map), field=None)
         input_maps = hp.ud_grade(input_maps, nside_out)
         input_maps[:, input_maps[0]==hp.UNSEEN] = 0.
         #Calibration
@@ -175,89 +176,15 @@ def analysis(analyzis_dir, sim_tag, ideal_map=None, input_map=None,
         else:
             np.save(opj(spectra_dir, "{}_diff_input_cl_nocal.npy".format(
                  sim_tag)), diff_input_cl)
-
-    if not plot:
         return 
-
-    img_dir = opj(analyzis_dir, "images")
-    cmap4maps = cm.RdBu_r
-    cmap4maps.set_under("w")
-    cmap4maps.set_bad("black", 0.5)
-    cmap = plt.get_cmap("tab10")
-    xlmax = 300
-
-    for f in range(6):
-        plt.figure(f)
-        ell = np.arange(len(cl[f]))
-        #Truncate to start in l=4
-        ell = ell[5:]
-        plt.plot(ell, ell*(ell+1)/(2*np.pi)*gain*cl[f][5:], label=label)
-        #Plot ideal spectrum
-        if ideal_map:
-            plt.plot(ell, ell*(ell+1)/(2*np.pi)*cl_ideal[f][5:], label="Ideal", 
-                ls="-.")
-
-            #Plot the difference spectra on extra plots
-            plt.figure(f+6)
-            plt.plot(ell, ell*(ell+1)/(2*np.pi)*diff_ideal_cl[f][5:], 
-                label="Residuals of "+str(label)+" vs ideal")
-            plt.figure(f)
-
-        if input_map:
-        #plotting input spectra
-            plt.plot(ell, ell*(ell+1)/(2*np.pi)*cl_input[f][5:], label="Input",
-                ls="--", color="k")
-            plt.figure(f+6)
-            plt.plot(ell, ell*(ell+1)/(2*np.pi)*diff_input_cl[f][5:], 
-                label="Residuals of "+str(label)+" vs input", ls="--")
-            plt.figure(f)
-
-        #Labeling plots
-        plt.legend(loc=2, frameon=False)
-        plt.xlabel(r"Multipole, $\ell$")
-        plt.ylabel(r"$D_\ell^{{{}}}$".format(fstrs[f]))
-        plt.xlim([0, xlmax])
-
-        if f !=12:#Let be for now...
-            autoscale_y(plt.gca())
-            plt.xlim([1,xlmax])
-
-        img_name = sim_tag+"_"+"spec{}.png".format(fstrs[f])
-        plt.savefig(opj(analyzis_dir, img_dir, img_name),
-                bbox_inches="tight", dpi=300)
-        plt.close()
-
-        if input_map or ideal_map:
-            #Add BB contours
-            plt.figure(f+6)
-
-            if f == 2:
-                #plot_bb(outdir)
-                plt.gca().set_yscale("log")
-                plt.gca().set_xscale("log")
-                plt.xlim([1,xlmax])
-                plt.ylim([1e-5, 1e0])
-
-            plt.legend(loc=2, frameon=False)
-            plt.xlabel(r"Multipole, $\ell$")
-            plt.ylabel(r"$D_\ell^{{{}}}$".format(fstrs[f]))
-            plt.xlim([1, xlmax])
-            if f != 2:
-                autoscale_y(plt.gca())
-            img_name = sim_tag+"_"+"dspec{}.png".format(fstrs[f])
-            plt.savefig(opj(analyzis_dir, img_dir, img_name),
-                bbox_inches="tight", dpi=300)
-            plt.close()
-
-    return
 
 
 def main():
 
     parser = ap.ArgumentParser(formatter_class=ap.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--sim_tag", type=str, action="store", dest="sim_tag")
-    parser.add_argument("--analyzis_dir", type=str, action="store", default="./", 
-        help="directory for analyzis", dest="analyzis_dir") 
+    parser.add_argument("--analysis_dir", type=str, action="store", default="./", 
+        help="directory for analysis", dest="analysis_dir") 
     parser.add_argument("--ideal_map", type=str, action="store", default=None, 
         help="ideal map for comparaison", dest="ideal_map") 
     parser.add_argument("--input_map", type=str, action="store", default=None, 
@@ -266,17 +193,16 @@ def main():
         help="Mask for analysis", dest="mask_file")
     parser.add_argument("--calibrate", type=int, default=None, action="store", 
         dest="calibrate", help="Calibrate vs ideal or input") 
-    parser.add_argument("--plot", default=False, action="store_true", 
-        dest="plot", help="Plot spectra") 
-    parser.add_argument("--label", type=str, action="store", default=None, 
-    help="Label of non-ideality on plots", dest="label") 
+    parser.add_argument("--ideal_tag", type=str, action="store", dest="ide_tag",
+        default="ideal", help="how to label the difference with ideal spectra")
     parser.add_argument("--fwhm", type=float, action="store", dest="fwhm", 
-        default=30.)
+        default=33.)
     args = parser.parse_args()
 
     analysis(
-            analyzis_dir = args.analyzis_dir, 
+            analysis_dir = args.analysis_dir, 
             sim_tag = args.sim_tag, 
+            ide_tag = args.ide_tag,
             ideal_map = args.ideal_map, 
             input_map = args.input_map,
             cal = args.calibrate, 
@@ -285,9 +211,7 @@ def main():
             lmax = 767,
             fwhm = args.fwhm, 
             l1 = 50, 
-            l2 = 100,
-            plot = args.plot,
-            label = args.label)
+            l2 = 100)
 
     return
 
